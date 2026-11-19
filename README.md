@@ -10,7 +10,7 @@ MultiRec is a small Windows app. A typical use is a call: your voice goes to one
 - Live meters, waveforms, file sizes, disk-space estimate and sync statistics.
 - Optional transcription that runs entirely on your PC, labels each speaker, and keeps the *how* as well as the *what*: pauses, emphasis, rising intonation, pace.
 
-> **Platform:** Windows 10 (1703+) or Windows 11, 64-bit.
+> **Platform:** Windows 10 (1703+) or Windows 11, 64-bit, on a CPU with AVX2 (any Intel or AMD desktop/laptop CPU from roughly 2015 on).
 
 ---
 

@@ -39,8 +39,20 @@ struct RawWord {
 
 impl Engine {
     pub fn load(path: &Path, model_id: &str, threads: usize, lang: &str) -> Result<Self> {
+        Self::load_with(path, model_id, threads, lang, true, false)
+    }
+
+    pub fn load_with(
+        path: &Path,
+        model_id: &str,
+        threads: usize,
+        lang: &str,
+        dtw: bool,
+        flash_attn: bool,
+    ) -> Result<Self> {
         let mut cp = WhisperContextParameters::default();
-        if let Some(preset) = dtw_preset(model_id) {
+        cp.flash_attn(flash_attn);
+        if let Some(preset) = dtw_preset(model_id).filter(|_| dtw) {
             cp.dtw_parameters(DtwParameters {
                 mode: DtwMode::ModelPreset {
                     model_preset: preset,
@@ -172,4 +184,52 @@ fn merge_split_tags(words: Vec<Word>) -> Vec<Word> {
         out.push(o);
     }
     out
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    /// MULTIREC_TTS_DIR=<clips> MULTIREC_TEST_MODEL=<id> cargo test --release -- --ignored --nocapture whisper_speed
+    #[test]
+    #[ignore]
+    fn whisper_speed() {
+        let dir = std::path::PathBuf::from(std::env::var("MULTIREC_TTS_DIR").unwrap());
+        let mut audio = Vec::new();
+        for c in ["me1", "other1", "me2", "other2"] {
+            audio.extend(
+                crate::transcribe::audio_io::load_mono_16k(&dir.join(format!("{c}.wav"))).unwrap(),
+            );
+        }
+        audio.truncate(16_000 * 28);
+        let id = std::env::var("MULTIREC_TEST_MODEL").unwrap_or_else(|_| "base.en".into());
+        let m = crate::transcribe::models::find(&id).unwrap();
+        let path = crate::transcribe::models::path(m);
+        println!("system_info: {}", whisper_rs::print_system_info());
+        {
+            let e = Engine::load_with(&path, &id, 8, "en", false, false).unwrap();
+            let mut st = e.ctx.create_state().unwrap();
+            let t = std::time::Instant::now();
+            st.pcm_to_mel(&audio, 8).unwrap();
+            let mel = t.elapsed();
+            let t = std::time::Instant::now();
+            st.encode(0, 8).unwrap();
+            println!(
+                "mel={:.2}s encode(1 window)={:.2}s",
+                mel.as_secs_f32(),
+                t.elapsed().as_secs_f32()
+            );
+        }
+        for (dtw, flash, threads) in [(true, false, 8)] {
+            let t = std::time::Instant::now();
+            let e = Engine::load_with(&path, &id, threads, "en", dtw, flash).unwrap();
+            let load = t.elapsed();
+            let t = std::time::Instant::now();
+            let w = e.transcribe(&audio, 0.0).unwrap();
+            println!(
+                "dtw={dtw:<5} flash={flash:<5} threads={threads:<2} load={:>5.2}s transcribe={:>6.2}s words={}",
+                load.as_secs_f32(), t.elapsed().as_secs_f32(), w.len()
+            );
+        }
+    }
 }

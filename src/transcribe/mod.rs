@@ -517,7 +517,7 @@ mod e2e {
             JobOptions {
                 session_dir: dir.clone(),
                 model_id: std::env::var("MULTIREC_TEST_MODEL").unwrap_or_else(|_| "base.en".into()),
-                language: "en".into(),
+                language: std::env::var("MULTIREC_TEST_LANG").unwrap_or_else(|_| "en".into()),
                 threads: 8,
                 bleed: true,
                 prosody: true,
@@ -549,5 +549,59 @@ mod e2e {
             !me_lines.contains("perfectly"),
             "bleed not removed: {me_lines}"
         );
+    }
+
+    /// Runs the app's transcription job on a copy of a real session (diagnostics):
+    /// MULTIREC_SESSION_DIR=<dir> MULTIREC_TEST_MODEL=<id> cargo test --release -- --ignored --nocapture transcribes_real_session
+    #[test]
+    #[ignore]
+    fn transcribes_real_session() {
+        let src =
+            PathBuf::from(std::env::var("MULTIREC_SESSION_DIR").expect("MULTIREC_SESSION_DIR"));
+        let dir = std::env::temp_dir().join("multirec_real_session");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for e in std::fs::read_dir(&src).unwrap() {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.starts_with("transcript") && !name.starts_with("mix.") {
+                std::fs::copy(e.path(), dir.join(&name)).unwrap();
+            }
+        }
+        let p: Progress = Arc::new(Mutex::new(JobProgress::default()));
+        let p2 = p.clone();
+        let watcher = std::thread::spawn(move || {
+            let mut last = String::new();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let g = p2.lock();
+                if g.stage != last {
+                    println!("stage: {}", g.stage);
+                    last = g.stage.clone();
+                }
+                if g.done {
+                    break;
+                }
+            }
+        });
+        // Same thread setup as the GUI.
+        let opts = JobOptions {
+            session_dir: dir.clone(),
+            model_id: std::env::var("MULTIREC_TEST_MODEL").unwrap_or_else(|_| "base.en".into()),
+            language: std::env::var("MULTIREC_TEST_LANG").unwrap_or_else(|_| "en".into()),
+            threads: 8,
+            bleed: true,
+            prosody: true,
+        };
+        let pj = p.clone();
+        std::thread::spawn(move || run_job(opts, pj))
+            .join()
+            .unwrap();
+        watcher.join().unwrap();
+        let g = p.lock();
+        for l in &g.log {
+            println!("log: {l}");
+        }
+        assert!(g.error.is_none(), "{:?}", g.error);
     }
 }

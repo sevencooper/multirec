@@ -4,6 +4,10 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-19
+### Fixed
+- **Transcription crashed the app instantly on CPUs without AVX-512** (most consumer CPUs). whisper.cpp was compiled for the CI build machine's CPU; it now targets a portable AVX2 baseline, and CI refuses to publish builds containing AVX-512 code.
+
 ## [0.2.0] - 2026-11-19
 ### Added
 - **Opus** output format (Ogg Opus, speech-tuned VoIP mode with DTX): ~14 MB per hour per track at 32 kbps, with exact length and alignment kept. The transcriber reads `.opus`.

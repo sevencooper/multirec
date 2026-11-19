@@ -1,3 +1,16 @@
 # Statically link the MSVC C runtime so the .exe has no VC++ redistributable dependency.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Build whisper.cpp (ggml) for a portable CPU baseline (SSE4.2/AVX/AVX2/BMI2/FMA/F16C),
+# NOT for the build machine. ggml's default "native" mode compiled AVX-512 code on
+# GitHub's CI runners, which crashed the app (illegal instruction) on CPUs without AVX-512.
+# whisper-rs-sys forwards GGML_* environment variables to CMake.
+[env]
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+GGML_BMI2 = "ON"
+GGML_AVX512 = "OFF"
