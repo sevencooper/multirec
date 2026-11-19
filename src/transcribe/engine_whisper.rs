@@ -3,13 +3,28 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use whisper_rs::{
     DtwMode, DtwModelPreset, DtwParameters, FullParams, SamplingStrategy, WhisperContext,
-    WhisperContextParameters,
+    WhisperContextParameters, WhisperState,
 };
 
 pub struct Engine {
     ctx: WhisperContext,
+    /// Reused across chunks: (re)allocating compute buffers per chunk is slow, on GPU especially.
+    state: WhisperState,
     threads: i32,
     lang: String,
+}
+
+/// GPU builds delay-load vulkan-1.dll; touching whisper.cpp without it would crash.
+#[cfg(all(windows, feature = "gpu"))]
+pub fn vulkan_available() -> bool {
+    use windows::core::w;
+    use windows::Win32::System::LibraryLoader::LoadLibraryW;
+    unsafe { LoadLibraryW(w!("vulkan-1.dll")).is_ok() }
+}
+
+#[cfg(not(all(windows, feature = "gpu")))]
+pub fn vulkan_available() -> bool {
+    true
 }
 
 /// DTW alignment-head presets give accurate per-token timestamps.
@@ -38,8 +53,14 @@ struct RawWord {
 }
 
 impl Engine {
-    pub fn load(path: &Path, model_id: &str, threads: usize, lang: &str) -> Result<Self> {
-        Self::load_with(path, model_id, threads, lang, true, false)
+    pub fn load(
+        path: &Path,
+        model_id: &str,
+        threads: usize,
+        lang: &str,
+        use_gpu: bool,
+    ) -> Result<Self> {
+        Self::load_with(path, model_id, threads, lang, true, false, use_gpu)
     }
 
     pub fn load_with(
@@ -49,9 +70,17 @@ impl Engine {
         lang: &str,
         dtw: bool,
         flash_attn: bool,
+        use_gpu: bool,
     ) -> Result<Self> {
+        if !vulkan_available() {
+            anyhow::bail!(
+                "this build transcribes with Vulkan, but vulkan-1.dll was not found. \
+                 Install or update your graphics driver."
+            );
+        }
         let mut cp = WhisperContextParameters::default();
         cp.flash_attn(flash_attn);
+        cp.use_gpu(use_gpu && cfg!(feature = "gpu"));
         if let Some(preset) = dtw_preset(model_id).filter(|_| dtw) {
             cp.dtw_parameters(DtwParameters {
                 mode: DtwMode::ModelPreset {
@@ -62,19 +91,19 @@ impl Engine {
         }
         let ctx = WhisperContext::new_with_params(path, cp)
             .map_err(|e| anyhow!("loading model: {e:?}"))?;
+        let state = ctx
+            .create_state()
+            .map_err(|e| anyhow!("whisper state: {e:?}"))?;
         Ok(Self {
             ctx,
+            state,
             threads: threads.max(1) as i32,
             lang: lang.to_string(),
         })
     }
 
     /// Transcribe 16 kHz mono audio (≤ ~30 s works best); word times are offset by `offset_s`.
-    pub fn transcribe(&self, audio: &[f32], offset_s: f64) -> Result<Vec<Word>> {
-        let mut state = self
-            .ctx
-            .create_state()
-            .map_err(|e| anyhow!("whisper state: {e:?}"))?;
+    pub fn transcribe(&mut self, audio: &[f32], offset_s: f64) -> Result<Vec<Word>> {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_n_threads(self.threads);
         params.set_language(Some(self.lang.as_str()));
@@ -97,13 +126,13 @@ impl Engine {
         } else {
             audio
         };
-        state
+        self.state
             .full(params, input)
             .map_err(|e| anyhow!("whisper: {e:?}"))?;
 
         let eot = self.ctx.token_eot();
         let mut words: Vec<Word> = Vec::new();
-        for seg in state.as_iter() {
+        for seg in self.state.as_iter() {
             let seg_t1 = seg.end_timestamp();
             let mut raw: Vec<RawWord> = Vec::new();
             for j in 0..seg.n_tokens() {
@@ -206,30 +235,22 @@ mod bench {
         let m = crate::transcribe::models::find(&id).unwrap();
         let path = crate::transcribe::models::path(m);
         println!("system_info: {}", whisper_rs::print_system_info());
-        {
-            let e = Engine::load_with(&path, &id, 8, "en", false, false).unwrap();
-            let mut st = e.ctx.create_state().unwrap();
+        crate::transcribe::wlog::start_job();
+        for (gpu, threads) in [(true, 8), (false, 8), (false, 16)] {
             let t = std::time::Instant::now();
-            st.pcm_to_mel(&audio, 8).unwrap();
-            let mel = t.elapsed();
-            let t = std::time::Instant::now();
-            st.encode(0, 8).unwrap();
-            println!(
-                "mel={:.2}s encode(1 window)={:.2}s",
-                mel.as_secs_f32(),
-                t.elapsed().as_secs_f32()
-            );
-        }
-        for (dtw, flash, threads) in [(true, false, 8)] {
-            let t = std::time::Instant::now();
-            let e = Engine::load_with(&path, &id, threads, "en", dtw, flash).unwrap();
+            let mut e = Engine::load_with(&path, &id, threads, "en", true, false, gpu).unwrap();
             let load = t.elapsed();
-            let t = std::time::Instant::now();
-            let w = e.transcribe(&audio, 0.0).unwrap();
-            println!(
-                "dtw={dtw:<5} flash={flash:<5} threads={threads:<2} load={:>5.2}s transcribe={:>6.2}s words={}",
-                load.as_secs_f32(), t.elapsed().as_secs_f32(), w.len()
-            );
+            for run in 0..2 {
+                let t = std::time::Instant::now();
+                let w = e.transcribe(&audio, 0.0).unwrap();
+                println!(
+                    "gpu={gpu:<5} threads={threads:<2} run={run} load={:>5.2}s transcribe={:>6.2}s words={}",
+                    load.as_secs_f32(), t.elapsed().as_secs_f32(), w.len()
+                );
+            }
+            for l in crate::transcribe::wlog::take_notable() {
+                println!("  whisper: {l}");
+            }
         }
     }
 }

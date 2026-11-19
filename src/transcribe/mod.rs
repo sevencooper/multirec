@@ -9,6 +9,8 @@ pub mod export;
 pub mod merge;
 pub mod models;
 pub mod prosody;
+#[cfg(feature = "whisper")]
+pub mod wlog;
 
 use crate::audio::DeviceKind;
 use crate::recorder::manifest::Manifest;
@@ -82,6 +84,7 @@ pub struct JobOptions {
     pub threads: usize,
     pub bleed: bool,
     pub prosody: bool,
+    pub use_gpu: bool,
 }
 
 #[derive(Default)]
@@ -99,6 +102,10 @@ pub type Progress = Arc<Mutex<JobProgress>>;
 
 pub fn engine_available() -> bool {
     cfg!(feature = "whisper")
+}
+
+pub fn gpu_available() -> bool {
+    cfg!(feature = "gpu")
 }
 
 pub fn run_job(opts: JobOptions, p: Progress) {
@@ -263,10 +270,34 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
     })?;
 
     #[cfg(feature = "whisper")]
-    let engine = {
+    let mut engine = {
         p.lock().stage = "Loading model…".into();
-        engine_whisper::Engine::load(&model_path, &opts.model_id, opts.threads, &opts.language)?
+        wlog::start_job();
+        let t = std::time::Instant::now();
+        let e = engine_whisper::Engine::load(
+            &model_path,
+            &opts.model_id,
+            opts.threads,
+            &opts.language,
+            opts.use_gpu,
+        )?;
+        let notes = wlog::take_notable();
+        if !opts.use_gpu {
+            log(p, "Running on the CPU (GPU turned off in settings)");
+        }
+        for l in notes {
+            // whisper.cpp reports "no GPU found" even when the GPU was simply turned off.
+            if opts.use_gpu || !l.to_ascii_lowercase().contains("gpu") {
+                log(p, wlog::describe(&l));
+            }
+        }
+        log(
+            p,
+            format!("Model loaded in {:.1} s", t.elapsed().as_secs_f32()),
+        );
+        e
     };
+    let started = std::time::Instant::now();
     #[cfg(not(feature = "whisper"))]
     {
         let _ = model_path;
@@ -337,6 +368,13 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
         });
     }
 
+    log(
+        p,
+        format!(
+            "Speech recognition took {:.0} s",
+            started.elapsed().as_secs_f32()
+        ),
+    );
     if opts.bleed {
         let d = bleed::suppress(&mut tracks);
         if d > 0 {
@@ -521,6 +559,7 @@ mod e2e {
                 threads: 8,
                 bleed: true,
                 prosody: true,
+                use_gpu: std::env::var("MULTIREC_TEST_CPU").is_err(),
             },
             p.clone(),
         );
@@ -592,6 +631,7 @@ mod e2e {
             threads: 8,
             bleed: true,
             prosody: true,
+            use_gpu: std::env::var("MULTIREC_TEST_CPU").is_err(),
         };
         let pj = p.clone();
         std::thread::spawn(move || run_job(opts, pj))

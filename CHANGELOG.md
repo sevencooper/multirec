@@ -4,6 +4,16 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-19
+### Added
+- **GPU transcription** via Vulkan (NVIDIA, AMD, Intel), on by default with automatic CPU fallback. On an RTX-class card a 25-minute call transcribes in under a minute with `large-v3-turbo` (about 100× faster than CPU).
+- "Use GPU" option in the Transcribe tab; the job log shows the device used and timings.
+- whisper.cpp diagnostics are saved to `%LOCALAPPDATA%\MultiRec\whisper.log`.
+
+### Changed
+- The Whisper state is reused across chunks (faster on CPU and GPU).
+- The exe is larger (~65 MB) because it embeds the GPU shaders. The app still starts and records on machines without a Vulkan driver.
+
 ## [0.2.1] - 2026-11-19
 ### Fixed
 - **Transcription crashed the app instantly on CPUs without AVX-512** (most consumer CPUs). whisper.cpp was compiled for the CI build machine's CPU; it now targets a portable AVX2 baseline, and CI refuses to publish builds containing AVX-512 code.

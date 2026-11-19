@@ -130,6 +130,8 @@ pub struct TranscribeConfig {
     pub threads: usize,
     pub bleed_suppression: bool,
     pub prosody: bool,
+    /// Use the GPU (Vulkan) when the build supports it.
+    pub use_gpu: bool,
 }
 
 impl Default for TranscribeConfig {
@@ -142,6 +144,7 @@ impl Default for TranscribeConfig {
                 .unwrap_or(4),
             bleed_suppression: true,
             prosody: true,
+            use_gpu: true,
         }
     }
 }

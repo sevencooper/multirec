@@ -1,17 +1,18 @@
 [package]
 name = "multirec"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "Multi-device synchronized audio recorder for Windows with live stats and speaker transcripts"
 license = "MIT"
 readme = "README.md"
 
 [features]
-default = ["whisper"]
+default = ["whisper", "gpu"]
 # Local speech-to-text via whisper.cpp (needs CMake + LLVM/libclang at build time).
-whisper = ["dep:whisper-rs"]
-# GPU acceleration for transcription (needs the Vulkan SDK at build time).
-whisper-vulkan = ["whisper", "whisper-rs/vulkan"]
+whisper = ["dep:whisper-rs", "dep:log"]
+# GPU transcription through Vulkan (NVIDIA/AMD/Intel). Needs the Vulkan SDK at
+# build time only; at runtime vulkan-1.dll (shipped with GPU drivers) is delay-loaded.
+gpu = ["whisper", "whisper-rs/vulkan"]
 
 [dependencies]
 eframe = "=0.29.1"
@@ -30,7 +31,8 @@ global-hotkey = "0.6"
 ureq = "2"
 opus = "0.4"
 ogg = "0.9"
-whisper-rs = { version = "0.16", optional = true }
+whisper-rs = { version = "0.16", optional = true, features = ["log_backend"] }
+log = { version = "0.4", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -45,6 +47,7 @@ windows = { version = "0.58", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_Storage_FileSystem",
+    "Win32_System_LibraryLoader",
 ] }
 
 [profile.release]

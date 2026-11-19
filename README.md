@@ -107,19 +107,27 @@ Settings are saved automatically to `%APPDATA%\MultiRec\config.toml`. Existing i
 
 ## Transcription
 
-The **Transcribe** tab turns a recording session into text using [Whisper](https://github.com/openai/whisper) (via whisper.cpp), running locally on your CPU.
+The **Transcribe** tab turns a recording session into text using [Whisper](https://github.com/openai/whisper) (via whisper.cpp), running locally on your **graphics card** (NVIDIA, AMD or Intel, via Vulkan), or on the CPU if there's no suitable GPU.
+
+| Example: 25-minute two-person call, `large-v3-turbo` | Time |
+|---|---|
+| GPU (RTX-class graphics card) | well under a minute |
+| CPU (modern 8-core) | about an hour, so use `base` or `small` on CPU instead |
 
 1. Choose the session folder. It's filled in automatically after a recording.
 2. Choose a **model**. It downloads once to `%LOCALAPPDATA%\MultiRec\models`.
 
    | Model | Size | Use when |
    |---|---|---|
-   | `small` (default) | 466 MB | good balance |
-   | `large-v3-turbo-q5_0` | 547 MB | best accuracy for the size |
+   | `large-v3-turbo` | 1.6 GB | best accuracy; the right choice with a GPU |
+   | `large-v3-turbo-q5_0` | 547 MB | nearly the same accuracy, smaller download |
+   | `small` (default) | 466 MB | good balance on CPU |
    | `base` / `tiny` | 142 / 75 MB | quick drafts |
    | `*.en` | — | English-only variants; slightly better for English |
 
 3. Choose the **language** (or auto-detect) and click **▶ Transcribe**.
+
+**Use GPU (Vulkan)** is on by default. The job log says whether it's running on the GPU or the CPU. The first chunk takes a few extra seconds while the GPU warms up. GPU transcription needs a graphics driver with Vulkan support, which all current NVIDIA, AMD and Intel drivers have. Without one, recording still works and transcription explains what's missing.
 
 Because every speaker is on their own track, attribution is exact. No guessing who said what.
 
@@ -160,7 +168,8 @@ Recording other people may require their consent where you live.
 | Output meter doesn't move | You selected a different output than the one playing audio. Check *Settings → System → Sound → Output*, or your call app's output setting. |
 | "device lost — retrying" | The device was unplugged or its format changed. It reconnects automatically. |
 | Hotkeys don't work | Another app uses the same shortcut; a message appears at startup. Use the buttons instead. |
-| Transcription is slow | Use a smaller model, or raise *CPU threads*. An hour of audio with `small` takes roughly 10–30 minutes on a modern CPU. |
+| Transcription is slow | Check that the job log says *Running on the GPU*. If it says CPU, update your graphics driver, or use `base`/`small` and raise *CPU threads*. |
+| Transcription fails or the app closes | Details from the speech engine are saved to `%LOCALAPPDATA%\MultiRec\whisper.log`. Please attach it when reporting an issue. |
 | Words are wrong or missing | Use a larger model and set the language explicitly instead of auto. |
 | SmartScreen warning | The exe isn't code-signed. Choose *More info → Run anyway*, or build from source. |
 

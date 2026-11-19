@@ -13,9 +13,15 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet -
 winget install --id Rustlang.Rustup
 winget install --id Kitware.CMake
 winget install --id LLVM.LLVM
+winget install --id KhronosGroup.VulkanSDK
 setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
 ```
-Open a new terminal, then run `rustup default stable-msvc`. CMake builds the bundled libopus (always) and whisper.cpp (default `whisper` feature); LLVM provides libclang for whisper-rs bindings.
+Open a new terminal (from WSL: run `wsl --shutdown` first, so the new variables are visible), then run `rustup default stable-msvc`.
+- CMake builds the bundled libopus (always) and whisper.cpp (default `whisper` feature).
+- LLVM provides libclang for whisper-rs bindings.
+- The Vulkan SDK (`VULKAN_SDK`, `glslc`) compiles whisper.cpp's GPU shaders (default `gpu` feature). It's needed at build time only.
+
+No GPU SDK? Build CPU-only with `cargo build --release --no-default-features --features whisper`.
 
 ### WSL / Linux (optional, for fast unit tests)
 ```bash
@@ -45,7 +51,7 @@ cargo test --no-default-features # unit tests on Linux, without whisper.cpp (~1 
 | Feature | Default | Effect |
 |---|---|---|
 | `whisper` | on | Local transcription via whisper.cpp. `--no-default-features` builds without it; the Transcribe tab then shows a notice. |
-| `whisper-vulkan` | off | GPU transcription. Needs the Vulkan SDK at build time. |
+| `gpu` | on | Vulkan GPU transcription. Needs the Vulkan SDK at build time. `vulkan-1.dll` is **delay-loaded** (see `build.rs`), so the exe starts without it, and `engine_whisper::vulkan_available()` checks for it before touching whisper.cpp. Adds about 55 MB of embedded shaders to the exe. |
 
 `.cargo/config.toml` links the MSVC C runtime statically, so the exe has no VC++ redistributable dependency. Keep that.
 
@@ -65,7 +71,11 @@ powershell -ExecutionPolicy Bypass -File scripts\gen-test-speech.ps1 -OutDir C:\
 ```bash
 ./build-windows.sh e2e 'C:\temp\multirec-tts'
 ```
-Set `MULTIREC_TEST_MODEL` to try another model, and `MULTIREC_TEST_FORMAT=opus|flac|wav` to store the test tracks in that format.
+Set `MULTIREC_TEST_MODEL` to try another model, `MULTIREC_TEST_FORMAT=opus|flac|wav` to store the test tracks in that format, and `MULTIREC_TEST_CPU=1` to force the CPU.
+
+**Diagnostics** (both `#[ignore]`):
+- `whisper_speed` benchmarks GPU against CPU on the TTS clips (`MULTIREC_TTS_DIR`).
+- `transcribes_real_session` runs the app's exact job on a *copy* of a real session (`MULTIREC_SESSION_DIR`). Never commit its output.
 
 **Manual checklist for UI or capture changes:**
 - [ ] Meters react on every selected source; clip light fires above about −0.1 dBFS.

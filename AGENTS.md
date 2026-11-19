@@ -26,12 +26,14 @@ You can't see the GUI. For UI changes, make sure it compiles, then ask the human
 2. **Capture threads must not block**: no file I/O, no long-held locks, no heavy work. Do processing in the session thread.
 3. **The UI thread never waits on audio or disk** (except the short join on exit, which finalizes files).
 4. **Files stay readable after a crash**: periodic `Sink::flush()` (WAV header rewrite) and a frame-by-frame FLAC encoder. Don't replace these with whole-file-at-end writers.
-5. **One portable exe**: static CRT (`.cargo/config.toml`), and no runtime DLLs beyond Windows system DLLs. Check with `objdump -p multirec.exe | grep "DLL Name"`.
+5. **One portable exe**: static CRT (`.cargo/config.toml`), and no runtime DLLs beyond Windows system DLLs. Check with `objdump -p multirec.exe | grep "DLL Name"`. The one exception is `vulkan-1.dll` (GPU transcription), which must stay **delay-loaded** (`build.rs`) and is only touched after `engine_whisper::vulkan_available()` returns true.
 6. **Everything local**: the only network call is the model download in `transcribe/models.rs`. No telemetry.
 7. **Opus files keep exact length**: `pre_skip` = encoder lookahead, and the final granule = `pre_skip + frames_written` (see `recorder/opus.rs`). Never drop packets during silence (DTX packets still get written), or timing breaks.
 8. **`session.json` is a contract** between recorder and transcriber (and users' scripts). Add fields with `#[serde(default)]`; bump `version` on breaking changes.
 
 ## Gotchas already learned
+- GPU builds (default `gpu` feature) need the Vulkan SDK on the build machine. Without it, use `--no-default-features --features whisper`. Benchmark: `whisper_speed` (GPU about 0.4 s against CPU about 80 s for 28 s of audio with `large-v3-turbo` on a high-end desktop GPU and 8-core CPU).
+- Reuse one `WhisperState` per job (`Engine::state`). Creating one per chunk costs a GPU warm-up each time.
 - **Never build whisper.cpp "native".** `.cargo/config.toml` `[env]` pins ggml to an AVX2 baseline (`GGML_NATIVE=OFF`). Native builds on CI produced AVX-512 code that crashed users' machines instantly, with no error. whisper-rs-sys does **not** rebuild when these variables change: run `cargo clean -p whisper-rs-sys` locally, and bump `prefix-key` in `ci.yml`. CI checks the exe for AVX-512 (`zmm`) instructions.
 - `whisper-rs` **0.16** API: `state.as_iter()`, `seg.start_timestamp()` (10 ms units), `seg.get_token(j)`, `tok.token_data().t_dtw`. Older versions (0.13) failed bindgen with current LLVM. Ignore examples written for older APIs.
 - Use **DTW timestamps** (`engine_whisper.rs::dtw_preset`). The default timestamps were off by seconds, and caused real words to be filtered out as "hallucinations". Adding a model means adding its preset.

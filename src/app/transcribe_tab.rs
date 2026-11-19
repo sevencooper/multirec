@@ -131,7 +131,25 @@ impl App {
                 });
                 ui.end_row();
 
-                ui.label("CPU threads");
+                ui.label("Compute");
+            ui.horizontal(|ui| {
+                ui.add_enabled(
+                    transcribe::gpu_available(),
+                    egui::Checkbox::new(&mut tc.use_gpu, "Use GPU (Vulkan)"),
+                )
+                .on_hover_text(
+                    "Runs Whisper on your graphics card (NVIDIA, AMD or Intel): typically 10–50× faster than CPU. \
+                     Falls back to the CPU automatically if no suitable GPU is found.",
+                );
+                if !transcribe::gpu_available() {
+                    ui.label(RichText::new("not in this build").small().color(DIM));
+                } else if !tc.use_gpu {
+                    ui.label(RichText::new("CPU only: use a small model for long recordings").small().color(DIM));
+                }
+            });
+            ui.end_row();
+
+            ui.label("CPU threads");
                 let maxt = std::thread::available_parallelism()
                     .map(|n| n.get())
                     .unwrap_or(8);
@@ -208,6 +226,7 @@ impl App {
                     threads: tc.threads,
                     bleed: tc.bleed_suppression,
                     prosody: tc.prosody,
+                    use_gpu: tc.use_gpu && transcribe::gpu_available(),
                 };
                 let p: Progress = Arc::new(Mutex::new(JobProgress::default()));
                 let p2 = p.clone();

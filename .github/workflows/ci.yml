@@ -21,10 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # Needed at build time only (GPU transcription via Vulkan; glslc compiles shaders).
+      - uses: jakoch/install-vulkan-sdk-action@v1.8.0
+        with:
+          cache: true
       - uses: Swatinem/rust-cache@v2
         with:
           # Bump when C/C++ build flags change: whisper-rs-sys doesn't rebuild on env changes.
-          prefix-key: v2-portable-ggml
+          prefix-key: v3-portable-ggml-vulkan
       - name: Test
         run: cargo test --release
       - name: Build
