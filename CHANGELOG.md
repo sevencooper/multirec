@@ -3,6 +3,8 @@
 All notable user-visible changes. Format: [Keep a Changelog](https://keepachangelog.com/), versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-11-19
 ### Added
 - **Opus** output format (Ogg Opus, speech-tuned VoIP mode with DTX): ~14 MB per hour per track at 32 kbps, with exact length and alignment kept. The transcriber reads `.opus`.
 - **Quality presets** above the sources: Lossless (FLAC 16-bit), Compact speech (Opus 32 kbps), Studio (WAV 24-bit).
