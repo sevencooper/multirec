@@ -7,6 +7,12 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 ## [0.3.0] - 2026-11-19
 ### Added
 - **GPU transcription** via Vulkan (NVIDIA, AMD, Intel), on by default with automatic CPU fallback. On an RTX-class card a 25-minute call transcribes in under a minute with `large-v3-turbo` (about 100× faster than CPU).
+- **Interactive session viewer** (`viewer.html`, one offline file per session):
+  - plays and scrubs the real audio, with waveform lanes per speaker, markers and zoom;
+  - per-speaker volume, mute and solo, plus playback speed;
+  - a word-by-word synced transcript with speaker notes; click to jump;
+  - search, a speaker filter, conversation and speaker statistics, shareable time links and keyboard shortcuts.
+- A **library page** (`index.html`) in the recordings folder lists all sessions; "Viewer" and "Library" buttons in the app.
 - "Use GPU" option in the Transcribe tab; the job log shows the device used and timings.
 - whisper.cpp diagnostics are saved to `%LOCALAPPDATA%\MultiRec\whisper.log`.
 

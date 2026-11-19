@@ -9,6 +9,7 @@ pub mod export;
 pub mod merge;
 pub mod models;
 pub mod prosody;
+pub mod viewer;
 #[cfg(feature = "whisper")]
 pub mod wlog;
 
@@ -306,6 +307,7 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
 
     let n = manifest.streams.len() as f32;
     let mut tracks = Vec::new();
+    let mut all_peaks = Vec::new();
     #[allow(unreachable_code)]
     for (si, s) in manifest.streams.iter().enumerate() {
         check_cancel(p)?;
@@ -315,6 +317,7 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
             g.fraction = si as f32 / n;
         }
         let audio = audio_io::load_mono_16k(&opts.session_dir.join(&s.file))?;
+        all_peaks.push(viewer::peaks(&audio));
         let chunks = plan_speech_batches(&audio, audio_io::SR);
         let speech_s: f64 =
             chunks.iter().map(|(a, b)| (b - a) as f64).sum::<f64>() / audio_io::SR as f64;
@@ -386,7 +389,7 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
     }
     p.lock().stage = "Building conversation…".into();
     let conv = merge::build(&mut tracks, opts.prosody);
-    let outs = export::write_all(
+    let mut outs = export::write_all(
         &opts.session_dir,
         &manifest,
         &tracks,
@@ -394,6 +397,20 @@ fn run_inner(opts: &JobOptions, p: &Progress) -> Result<Vec<PathBuf>> {
         &opts.model_id,
         &opts.language,
     )?;
+    // Interactive viewer first in the list: it's what the UI offers to open.
+    let v = viewer::write_with_transcript(
+        &opts.session_dir,
+        &manifest,
+        &tracks,
+        all_peaks,
+        &conv,
+        &opts.model_id,
+        &opts.language,
+    )?;
+    outs.insert(0, v);
+    if let Some(root) = opts.session_dir.parent() {
+        let _ = viewer::write_library(root);
+    }
     for o in &outs {
         log(p, format!("Wrote {}", o.display()));
     }

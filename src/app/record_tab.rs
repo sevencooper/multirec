@@ -504,6 +504,15 @@ impl App {
                     if ui.button("📂 Open folder").clicked() {
                         crate::sysinfo::open_in_explorer(&dir);
                     }
+                    let viewer = dir.join(crate::transcribe::viewer::VIEWER_FILE);
+                    if viewer.exists()
+                        && ui
+                            .button("🌐 Viewer")
+                            .on_hover_text("Play, scrub and browse this session in your browser")
+                            .clicked()
+                    {
+                        crate::sysinfo::open_in_explorer(&viewer);
+                    }
                     if ui.button("📝 Transcribe…").clicked() {
                         self.tr.session_dir = dir.display().to_string();
                         self.tab = Tab::Transcribe;
@@ -530,6 +539,15 @@ impl App {
                     if ui.button("📂").on_hover_text("Open").clicked() {
                         let _ = std::fs::create_dir_all(&self.cfg.output_dir);
                         crate::sysinfo::open_in_explorer(&self.cfg.output_dir);
+                    }
+                    let lib = self.cfg.output_dir.join(crate::transcribe::viewer::LIBRARY_FILE);
+                    if ui
+                        .button("📚 Library")
+                        .on_hover_text("Browse all recordings in your browser")
+                        .clicked()
+                    {
+                        let _ = crate::transcribe::viewer::write_library(&self.cfg.output_dir);
+                        crate::sysinfo::open_in_explorer(&lib);
                     }
                 });
                 ui.end_row();

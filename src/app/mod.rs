@@ -252,6 +252,13 @@ impl eframe::App for App {
                     Ok(dir) => {
                         self.tr.session_dir = dir.display().to_string();
                         self.notify(format!("Saved to {}", dir.display()), false);
+                        // Build the session's viewer page and refresh the library off the UI thread.
+                        std::thread::spawn(move || {
+                            let _ = crate::transcribe::viewer::write_audio_only(&dir);
+                            if let Some(root) = dir.parent() {
+                                let _ = crate::transcribe::viewer::write_library(root);
+                            }
+                        });
                     }
                     Err(e) => self.notify(e, true),
                 }

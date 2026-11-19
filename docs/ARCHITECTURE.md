@@ -111,6 +111,11 @@ Runs on a worker thread. Progress goes through `Arc<Mutex<JobProgress>>`, and ca
      - word emphasis (+5 dB or +4 semitones).
    - All speakers are interleaved by start time, and long gaps between turns are noted.
 8. **Export** (`export.rs`): Markdown, JSON (full word-level data), SRT/VTT (combined and per speaker).
+9. **Viewer** (`viewer.rs` + `viewer.html`):
+   - The template is compiled into the exe. Session data goes in as one JSON block, with `</` escaped so transcript text can't close the script.
+   - Waveform peaks (20 per second, sqrt-scaled) are precomputed from the 16 kHz audio, because browsers can't `fetch`/decode local files on `file://`.
+   - The page plays each stream's file through its own `<audio>` element, re-syncing them to the first whenever they drift more than 60 ms.
+   - An audio-only viewer is written right after recording (on a background thread from the UI). The transcription job overwrites it with the full one, and both refresh the library `index.html` in the parent folder.
 
 ## Code map
 | Path | Responsibility |
@@ -129,7 +134,7 @@ Runs on a worker thread. Progress goes through `Arc<Mutex<JobProgress>>`, and ca
 | `src/recorder/session.rs` | Session thread, recording lifecycle, hardware test |
 | `src/recorder/writer.rs`, `flac.rs`, `opus.rs` | File sinks, FLAC encoder, Ogg Opus writer/reader |
 | `src/recorder/manifest.rs` | `session.json` |
-| `src/transcribe/*` | Transcription pipeline (above) |
+| `src/transcribe/*` | Transcription pipeline (above); `viewer.rs`/`viewer.html` session viewer and library |
 | `src/config.rs` | Persistent settings (`%APPDATA%\MultiRec\config.toml`), quality presets |
 | `src/clock.rs`, `src/sysinfo.rs` | QPC clock; free disk space, opening Explorer |
 

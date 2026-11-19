@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MultiRec session</title>
+<style>
+:root{
+  --bg:#f5f6f8;--fg:#1b1d22;--card:#fff;--dim:#6b7280;--line:#e2e5ea;--acc:#2f6fed;--hl:#fff3b0;--hlfg:#1b1d22;
+  --cur:rgba(47,111,237,.16);--wave-bg:#eef0f4;--play:#e5484d;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1115;--fg:#e6e8ec;--card:#181b22;--dim:#8b93a1;--line:#2a2f39;--acc:#6b9cff;--hl:#5a4b00;--hlfg:#fff;
+  --cur:rgba(107,156,255,.22);--wave-bg:#14171d;--play:#ff6369;
+}}
+*{box-sizing:border-box}
+
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;line-height:1.2}
+button:hover{border-color:var(--acc)}
+select{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px;color:var(--fg)}button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.dim{color:var(--dim)}.small{font-size:12.5px}
+header{padding:16px 20px 8px;max-width:1400px;margin:0 auto}
+header h1{margin:0;font-size:21px}
+#banner{display:none;margin:8px 20px;padding:10px 14px;border-radius:8px;background:#fde8e8;color:#8a1c1c;max-width:1360px}
+@media (prefers-color-scheme:dark){#banner{background:#3b1717;color:#ffb4b4}}
+#player{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:8px 20px 10px}
+#player .inner{max-width:1400px;margin:0 auto}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#play{width:44px;height:36px;font-size:17px;background:var(--play);border-color:var(--play);color:#fff}
+#time{font:600 17px/1 ui-monospace,SFMono-Regular,Consolas,monospace;min-width:150px}
+.spacer{flex:1}
+#lanes{position:relative;margin-top:8px;user-select:none;touch-action:none}
+#wave{display:block;width:100%;border-radius:8px;background:var(--wave-bg);cursor:pointer}
+#hover{position:absolute;top:-4px;pointer-events:none;transform:translate(-50%,-100%);background:var(--fg);color:var(--bg);font-size:12px;padding:2px 6px;border-radius:4px;display:none;white-space:nowrap}
+.zoominfo{font-size:12px}
+main{max-width:1400px;margin:0 auto;padding:12px 20px 60px;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px}
+@media (max-width:980px){main{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){
+  header,#player,main{padding-left:12px;padding-right:12px}
+  .utt{grid-template-columns:64px minmax(0,1fr);gap:8px;padding:8px 12px}
+  .gap,.mk{padding-left:84px}
+  #time{min-width:0;font-size:15px}
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:0 0 10px}
+#tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+#q{flex:1;min-width:180px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+#transcript{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 0}
+.utt{display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;padding:8px 16px;border-left:3px solid transparent}
+.utt.cur{background:var(--cur)}
+.utt.hidden{display:none}
+.who{font-weight:600;font-size:14px}
+.ts{font:12.5px ui-monospace,Consolas,monospace;color:var(--dim);cursor:pointer}.ts:hover{color:var(--acc)}
+.txt{font-size:15.5px}
+.w{cursor:pointer;border-radius:3px;padding:0 1px}
+.w:hover{background:var(--cur)}
+.w.now{background:var(--acc);color:#fff}
+.w.emph{font-weight:700}
+.w.tag{font-style:italic;color:var(--dim)}
+.w.low{text-decoration:underline dotted;text-underline-offset:3px;opacity:.75}
+.w.match{background:var(--hl);color:var(--hlfg)}
+.w.match.focus{outline:2px solid var(--acc)}
+.pause{color:var(--dim);font-size:13px}
+.ann{font-size:12px;color:var(--dim);margin-left:4px;white-space:nowrap}
+.pill{display:inline-block;font-size:11px;padding:0 6px;border-radius:9px;border:1px solid var(--line);color:var(--dim);margin-left:4px;vertical-align:1px}
+.gap,.mk{font-size:12.5px;color:var(--dim);padding:4px 16px 4px 146px}
+.mk{color:var(--acc);cursor:pointer}
+.empty{padding:30px 16px;color:var(--dim);text-align:center}
+.spk{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}.spk:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.spk .row{display:flex;align-items:center;gap:8px}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+.spk .name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spk input[type=range]{width:100%;accent-color:var(--acc)}
+.stats{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px;margin-top:6px}
+.stats span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:6px 0 2px}.bar i{display:block;height:100%}
+ul.plain{list-style:none;margin:0;padding:0}ul.plain li{padding:3px 0}
+kbd{font:11.5px ui-monospace,Consolas,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px}
+#tip{position:fixed;z-index:20;pointer-events:none;background:var(--fg);color:var(--bg);font-size:12px;padding:4px 8px;border-radius:6px;display:none;max-width:280px}
+#resume{display:none;position:fixed;right:24px;bottom:24px;z-index:6;background:var(--acc);color:#fff;border-color:var(--acc);box-shadow:0 4px 14px rgba(0,0,0,.2)}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Session</h1>
+  <div id="sub" class="dim small"></div>
+</header>
+<div id="banner"></div>
+
+<div id="player"><div class="inner">
+  <div class="controls">
+    <button id="play" title="Play / pause (Space)">▶</button>
+    <button id="back15" title="Back 15 s (Shift+←)">−15</button>
+    <button id="back5" title="Back 5 s (←)">−5</button>
+    <button id="fwd5" title="Forward 5 s (→)">+5</button>
+    <button id="fwd15" title="Forward 15 s (Shift+→)">+15</button>
+    <span id="time">0:00 / 0:00</span>
+    <select id="rate" title="Playback speed ([ and ])">
+      <option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option>
+    </select>
+    <span class="spacer"></span>
+    <button id="zoomout" title="Zoom out (−)">−</button>
+    <span id="zoominfo" class="zoominfo dim">whole session</span>
+    <button id="zoomin" title="Zoom in (+)">+</button>
+    <button id="follow" class="on" title="Keep the transcript on the playing line (F)">Follow</button>
+    <button id="link" title="Copy a link to this moment">Link</button>
+  </div>
+  <div id="lanes"><canvas id="wave"></canvas><div id="hover"></div></div>
+</div></div>
+
+<main>
+  <section>
+    <div id="tools">
+      <input id="q" type="search" placeholder="Search the transcript…  ( / )">
+      <span id="qinfo" class="dim small"></span>
+      <button id="qprev" title="Previous match (Shift+Enter)">↑</button>
+      <button id="qnext" title="Next match (Enter)">↓</button>
+    </div>
+    <div id="transcript"></div>
+  </section>
+  <aside>
+    <div class="card"><h2>Speakers</h2><div id="speakers"></div></div>
+    <div class="card"><h2>Conversation</h2><div id="convstats" class="stats"></div></div>
+    <div class="card" id="markercard"><h2>Markers</h2><ul id="markers" class="plain"></ul></div>
+    <div class="card"><h2>Files</h2><ul id="files" class="plain small"></ul><div id="meta" class="dim small" style="margin-top:8px"></div></div>
+    <div class="card small"><h2>Legend &amp; keys</h2>
+      <div><b>bold</b> emphasised · ↗ rising (question-like) · ↘ falling · … pause · <span style="text-decoration:underline dotted">dotted</span> low confidence · <i>italic</i> sound/tag</div>
+      <div style="margin-top:6px"><kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd> 5 s · <kbd>Shift</kbd>+arrows 15 s · <kbd>[</kbd><kbd>]</kbd> speed · <kbd>+</kbd><kbd>−</kbd> zoom · <kbd>F</kbd> follow · <kbd>/</kbd> search</div>
+    </div>
+  </aside>
+</main>
+<div id="tip"></div>
+<button id="resume">↓ Back to the playing line</button>
+
+<script>
+// Surface any script error on the page instead of failing silently.
+window.addEventListener('error', e => { const b = document.getElementById('banner'); b.style.display = 'block'; b.setAttribute('data-error', '1');
+  b.appendChild(document.createTextNode(`Viewer error: ${e.message} (line ${e.lineno}). `)); });
+</script>
+<script type="application/json" id="data">__MULTIREC_DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById('data').textContent);
+const COLORS = ['#3b82f6','#f59e0b','#10b981','#a855f7','#ef4444','#06b6d4','#84cc16','#ec4899'];
+const $ = id => document.getElementById(id);
+const fmt = (t, frac) => {
+  t = Math.max(0, t || 0);
+  const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
+  const ss = String(s).padStart(2, '0') + (frac ? '.' + Math.floor((t % 1) * 10) : '');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = s => s.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+const banner = msg => { const b = $('banner'); b.style.display = 'block'; b.innerHTML += (b.innerHTML ? '<br>' : '') + esc(msg); };
+
+const SPK = D.speakers.map((s, i) => ({ ...s, i, color: COLORS[i % COLORS.length], vol: 1, muted: false, solo: false, shown: true,
+  peaksArr: (() => { try { const b = atob(s.peaks || ''); const a = new Uint8Array(b.length); for (let k = 0; k < b.length; k++) a[k] = b.charCodeAt(k); return a; } catch (e) { return new Uint8Array(0); } })() }));
+const UTTS = D.utts || [];
+const DUR = Math.max(D.duration || 0, 0.1);
+let matches = [], mpos = -1; // search state (used by the waveform too)
+
+// ---------- header ----------
+document.title = `${D.title} · MultiRec`;
+$('title').textContent = D.title;
+const started = D.started_at ? new Date(D.started_at) : null;
+$('sub').textContent = [
+  started && !isNaN(started) ? started.toLocaleString() : D.started_at,
+  fmt(DUR),
+  SPK.map(s => `${s.label} (${s.kind})`).join(', '),
+  D.model ? `transcribed with ${D.model}` + (D.language ? ` · ${D.language}` : '') : 'not transcribed yet',
+].filter(Boolean).join(' · ');
+
+// ---------- audio: one element per speaker, kept in lockstep with the first ----------
+const auds = SPK.map(s => {
+  const a = new Audio();
+  a.preload = 'auto';
+  a.src = encodeURI(s.file);
+  a.addEventListener('error', () => banner(`Can't play ${s.file} (missing, moved, or format not supported by this browser).`));
+  return a;
+});
+const master = auds[0];
+let playing = false;
+function applyVolumes() {
+  const anySolo = SPK.some(s => s.solo);
+  SPK.forEach((s, i) => { if (auds[i]) auds[i].volume = (s.muted || (anySolo && !s.solo)) ? 0 : s.vol; });
+}
+function now() { return master ? master.currentTime : 0; }
+function seek(t) {
+  t = Math.min(Math.max(0, t), DUR);
+  auds.forEach(a => { try { a.currentTime = t; } catch (e) {} });
+  render(t, true);
+}
+function play() {
+  if (!master) return;
+  const t = master.currentTime;
+  auds.forEach(a => { try { a.currentTime = t; } catch (e) {} a.play().catch(() => {}); });
+  playing = true; $('play').textContent = '❚❚';
+  requestAnimationFrame(loop);
+}
+function pause() { auds.forEach(a => a.pause()); playing = false; $('play').textContent = '▶'; }
+function toggle() { playing ? pause() : play(); }
+if (master) master.addEventListener('ended', pause);
+setInterval(() => { // drift correction between tracks
+  if (!playing || !master) return;
+  const t = master.currentTime;
+  for (let i = 1; i < auds.length; i++) if (Math.abs(auds[i].currentTime - t) > 0.06) auds[i].currentTime = t;
+}, 500);
+$('rate').addEventListener('change', e => { auds.forEach(a => a.playbackRate = +e.target.value); });
+$('play').onclick = toggle;
+$('back5').onclick = () => seek(now() - 5); $('fwd5').onclick = () => seek(now() + 5);
+$('back15').onclick = () => seek(now() - 15); $('fwd15').onclick = () => seek(now() + 15);
+
+// ---------- transcript ----------
+const W = []; // flat words: {t,s,e,u,el,n}
+const tr = $('transcript');
+function buildTranscript() {
+  if (!D.utts) { tr.innerHTML = '<div class="empty">This session hasn\'t been transcribed yet. Open it in MultiRec → Transcribe to add the transcript here. You can still play and scrub the audio above.</div>'; return; }
+  if (!UTTS.length) { tr.innerHTML = '<div class="empty">No speech was found in this session.</div>'; return; }
+  const frag = document.createDocumentFragment();
+  const markers = (D.markers || []).slice().sort((a, b) => a.t - b.t);
+  let mi = 0;
+  const addMarker = m => { const d = document.createElement('div'); d.className = 'mk'; d.textContent = `🚩 ${m.l} · ${fmt(m.t)}`; d.onclick = () => seek(m.t); frag.appendChild(d); };
+  UTTS.forEach((u, ui) => {
+    while (mi < markers.length && markers[mi].t <= u.s) addMarker(markers[mi++]);
+    if (u.gap) { const g = document.createElement('div'); g.className = 'gap'; g.textContent = `· silence ${u.gap.toFixed(1)} s ·`; frag.appendChild(g); }
+    const sp = SPK[u.sp] || { label: '?', color: '#888' };
+    const row = document.createElement('div');
+    row.className = 'utt'; row.dataset.sp = u.sp; row.style.borderLeftColor = sp.color;
+    const left = document.createElement('div');
+    left.innerHTML = `<div class="who" style="color:${sp.color}">${esc(sp.label)}</div>`;
+    const ts = document.createElement('div'); ts.className = 'ts'; ts.textContent = fmt(u.s); ts.title = 'Play from here';
+    ts.onclick = () => { seek(u.s); if (!playing) play(); };
+    left.appendChild(ts);
+    const txt = document.createElement('div'); txt.className = 'txt';
+    u.w.forEach((w, wi) => {
+      const [text, s, e, conf, flags, f0, db, pause] = w;
+      const el = document.createElement('span');
+      el.className = 'w' + (flags & 1 ? ' emph' : '') + (flags & 2 ? ' tag' : '') + (conf < 50 && !(flags & 2) ? ' low' : '');
+      el.textContent = text;
+      el.dataset.i = W.length;
+      W.push({ t: text, s, e, u: ui, el, n: norm(text), conf, f0, db, sp: u.sp });
+      txt.appendChild(el);
+      if (pause) { const p = document.createElement('span'); p.className = 'pause'; p.textContent = pause >= 1.5 ? ` (pause ${pause.toFixed(1)}s) ` : ' … '; txt.appendChild(p); }
+      else if (wi < u.w.length - 1) txt.appendChild(document.createTextNode(' '));
+    });
+    if (u.c === 'rising') txt.insertAdjacentHTML('beforeend', '<span class="ann" title="Rising intonation (question-like)">↗</span>');
+    if (u.c === 'falling') txt.insertAdjacentHTML('beforeend', '<span class="ann" title="Strongly falling intonation">↘</span>');
+    (u.tags || []).forEach(t => txt.insertAdjacentHTML('beforeend', `<span class="pill" title="Compared with this speaker's own average">${esc(t)}</span>`));
+    row.appendChild(left); row.appendChild(txt);
+    u.el = row;
+    frag.appendChild(row);
+  });
+  while (mi < markers.length) addMarker(markers[mi++]);
+  tr.appendChild(frag);
+}
+buildTranscript();
+// Word indices sorted by start time (overlapping speakers interleave in W).
+const WS = W.map((_, i) => i).sort((a, b) => W[a].s - W[b].s);
+
+tr.addEventListener('click', e => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i !== undefined) { seek(W[+i].s); if (!playing) play(); }
+});
+const tip = $('tip');
+tr.addEventListener('mousemove', e => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i === undefined) { tip.style.display = 'none'; return; }
+  const w = W[+i];
+  const bits = [fmt(w.s, true), `confidence ${w.conf}%`];
+  if (w.f0) bits.push(`pitch ${w.f0} Hz`);
+  if (w.db != null) bits.push(`${w.db} dB`);
+  tip.textContent = bits.join(' · ');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = (e.clientY + 16) + 'px';
+});
+tr.addEventListener('mouseleave', () => tip.style.display = 'none');
+
+// ---------- follow / current word ----------
+let follow = true, curWord = -1, curUtt = -1, lastAutoScroll = 0;
+function setFollow(on) { follow = on; $('follow').classList.toggle('on', on); $('resume').style.display = on ? 'none' : (playing ? 'block' : 'none'); }
+$('follow').onclick = () => { setFollow(!follow); if (follow) scrollToCurrent(true); };
+$('resume').onclick = () => { setFollow(true); scrollToCurrent(true); };
+['wheel', 'touchmove'].forEach(ev => addEventListener(ev, () => { if (playing && follow && Date.now() - lastAutoScroll > 400) setFollow(false); }, { passive: true }));
+function wordAt(t) { // index (into W) of the last word starting at or before t
+  let lo = 0, hi = WS.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (W[WS[m]].s <= t) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r < 0 ? -1 : WS[r];
+}
+function scrollToCurrent(force) {
+  if (curUtt < 0 || !UTTS[curUtt]) return;
+  const el = UTTS[curUtt].el, r = el.getBoundingClientRect(), top = $('player').getBoundingClientRect().bottom;
+  if (force || r.top < top + 10 || r.bottom > innerHeight - 40) { lastAutoScroll = Date.now(); el.scrollIntoView({ block: 'center', behavior: force ? 'auto' : 'smooth' }); }
+}
+function updateCurrent(t) {
+  // Words are sorted per speaker but interleaved across speakers; pick the latest word
+  // that has started and hasn't ended long ago.
+  let i = wordAt(t);
+  if (i >= 0 && t > W[i].e + 1.0) i = -1;
+  if (i !== curWord) {
+    if (curWord >= 0 && W[curWord]) W[curWord].el.classList.remove('now');
+    curWord = i;
+    if (i >= 0) W[i].el.classList.add('now');
+  }
+  let u = -1;
+  for (let k = 0; k < UTTS.length && UTTS[k].s <= t; k++) if (t <= UTTS[k].e + 0.5) u = k;
+  if (u !== curUtt) {
+    if (curUtt >= 0 && UTTS[curUtt]) UTTS[curUtt].el.classList.remove('cur');
+    curUtt = u;
+    if (u >= 0) { UTTS[u].el.classList.add('cur'); if (follow) scrollToCurrent(false); }
+  }
+}
+
+// ---------- waveform lanes ----------
+const cv = $('wave'), ctx = cv.getContext('2d');
+const LANE = 46, AXIS = 18;
+let zoom = 1, vStart = 0;
+function viewLen() { return DUR / zoom; }
+function clampView() { vStart = Math.min(Math.max(0, vStart), Math.max(0, DUR - viewLen())); }
+function sizeCanvas() {
+  const w = cv.clientWidth || 800, h = SPK.length * LANE + AXIS, dpr = devicePixelRatio || 1;
+  cv.style.height = h + 'px'; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw(t) {
+  const w = cv.clientWidth, h = SPK.length * LANE + AXIS, vl = viewLen();
+  const X = tt => (tt - vStart) / vl * w;
+  ctx.clearRect(0, 0, w, h);
+  const dimc = css('--dim'), linec = css('--line');
+  SPK.forEach((s, li) => {
+    const y0 = li * LANE, mid = y0 + LANE / 2;
+    ctx.fillStyle = s.color + '14'; ctx.fillRect(0, y0, w, LANE);
+    // utterance spans
+    ctx.fillStyle = s.color + '30';
+    for (const u of UTTS) if (u.sp === li && u.e >= vStart && u.s <= vStart + vl) ctx.fillRect(X(u.s), y0 + 2, Math.max(1, X(u.e) - X(u.s)), LANE - 4);
+    // peaks
+    const pk = s.peaksArr, pr = D.peak_rate || 20;
+    if (pk.length) {
+      ctx.fillStyle = s.muted ? dimc : s.color;
+      for (let px = 0; px < w; px++) {
+        const a = Math.floor((vStart + px / w * vl) * pr), b = Math.max(a + 1, Math.floor((vStart + (px + 1) / w * vl) * pr));
+        let m = 0; for (let k = a; k < b && k < pk.length; k++) if (pk[k] > m) m = pk[k];
+        const amp = m / 255 * (LANE / 2 - 4);
+        if (amp > 0.3) ctx.fillRect(px, mid - amp, 1, amp * 2);
+      }
+    }
+    ctx.fillStyle = dimc; ctx.font = '11px system-ui,sans-serif'; ctx.fillText(s.label, 6, y0 + 13);
+    ctx.fillStyle = linec; ctx.fillRect(0, y0 + LANE - 1, w, 1);
+  });
+  // time axis
+  const yA = SPK.length * LANE;
+  ctx.fillStyle = dimc; ctx.font = '10.5px system-ui,sans-serif';
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  const step = steps.find(st => vl / st <= w / 70) || 3600;
+  for (let tt = Math.ceil(vStart / step) * step; tt <= vStart + vl; tt += step) { const x = X(tt); ctx.fillRect(x, yA, 1, 4); ctx.fillText(fmt(tt), x + 3, yA + 13); }
+  // markers
+  ctx.fillStyle = css('--acc');
+  for (const m of D.markers || []) if (m.t >= vStart && m.t <= vStart + vl) { const x = X(m.t); ctx.fillRect(x, 0, 1.5, yA); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 7, 4); ctx.lineTo(x, 8); ctx.fill(); }
+  // search matches
+  if (matches.length) { ctx.fillStyle = '#facc15'; for (const mi of matches) { const x = X(W[mi].s); if (x >= 0 && x <= w) ctx.fillRect(x - 1, yA - 4, 2, 4); } }
+  // playhead
+  const px = X(t); ctx.fillStyle = css('--play'); ctx.fillRect(px - 1, 0, 2, h);
+}
+function render(t, force) {
+  if (zoom > 1 && (force || playing)) { const vl = viewLen(); if (t < vStart || t > vStart + vl * 0.92) { vStart = t - vl * 0.1; clampView(); } }
+  $('time').textContent = `${fmt(t, true)} / ${fmt(DUR)}`;
+  draw(t);
+  updateCurrent(t);
+}
+function loop() { render(now()); if (playing) requestAnimationFrame(loop); }
+function setZoom(z, anchor) {
+  const t = anchor ?? now(); const frac = (t - vStart) / viewLen();
+  zoom = Math.min(Math.max(1, z), Math.max(1, DUR / 5));
+  vStart = t - frac * viewLen(); clampView();
+  $('zoominfo').textContent = zoom <= 1.001 ? 'whole session' : `${fmt(viewLen())} visible`;
+  render(now());
+}
+$('zoomin').onclick = () => setZoom(zoom * 2); $('zoomout').onclick = () => setZoom(zoom / 2);
+const tAtX = x => vStart + x / cv.clientWidth * viewLen();
+let dragging = false;
+cv.addEventListener('pointerdown', e => { dragging = true; cv.setPointerCapture(e.pointerId); seek(tAtX(e.offsetX)); });
+cv.addEventListener('pointermove', e => {
+  const hv = $('hover'); hv.style.display = 'block'; hv.style.left = e.offsetX + 'px'; hv.textContent = fmt(tAtX(e.offsetX), true);
+  if (dragging) seek(tAtX(e.offsetX));
+});
+cv.addEventListener('pointerup', () => dragging = false);
+cv.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
+cv.addEventListener('wheel', e => {
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.25 : 0.8), tAtX(e.offsetX)); }
+  else if (zoom > 1 && Math.abs(e.deltaX) + Math.abs(e.deltaY) > 0) { e.preventDefault(); vStart += (e.deltaX || e.deltaY) / cv.clientWidth * viewLen(); clampView(); render(now()); }
+}, { passive: false });
+addEventListener('resize', () => { sizeCanvas(); render(now()); });
+
+// ---------- search ----------
+function runSearch() {
+  W.forEach(w => w.el.classList.remove('match', 'focus'));
+  matches = []; mpos = -1;
+  const q = $('q').value.trim().split(/\s+/).map(norm).filter(Boolean);
+  if (q.length) {
+    for (let i = 0; i + q.length <= W.length; i++) {
+      let ok = true;
+      for (let k = 0; k < q.length; k++) { const w = W[i + k]; if (w.u !== W[i].u || !(k === q.length - 1 ? w.n.startsWith(q[k]) : w.n === q[k])) { ok = false; break; } }
+      if (ok) { matches.push(i); for (let k = 0; k < q.length; k++) W[i + k].el.classList.add('match'); }
+    }
+  }
+  $('qinfo').textContent = q.length ? `${matches.length} match${matches.length === 1 ? '' : 'es'}` : '';
+  render(now());
+}
+function gotoMatch(d) {
+  if (!matches.length) return;
+  if (mpos >= 0) W[matches[mpos]].el.classList.remove('focus');
+  mpos = (mpos + d + matches.length) % matches.length;
+  const w = W[matches[mpos]]; w.el.classList.add('focus');
+  setFollow(false); w.el.scrollIntoView({ block: 'center' }); seek(w.s);
+  $('qinfo').textContent = `${mpos + 1} / ${matches.length}`;
+}
+$('q').addEventListener('input', runSearch);
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gotoMatch(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') { $('q').value = ''; runSearch(); $('q').blur(); } });
+$('qnext').onclick = () => gotoMatch(1); $('qprev').onclick = () => gotoMatch(-1);
+
+// ---------- speakers & stats ----------
+const talk = SPK.map(() => 0), words = SPK.map(() => 0), turns = SPK.map(() => 0), longest = SPK.map(() => 0), questions = SPK.map(() => 0), interrupts = SPK.map(() => 0);
+UTTS.forEach((u, k) => {
+  const d = Math.max(0, u.e - u.s);
+  talk[u.sp] += d; turns[u.sp]++; longest[u.sp] = Math.max(longest[u.sp], d);
+  words[u.sp] += u.w.filter(w => !(w[4] & 2)).length;
+  if (u.c === 'rising') questions[u.sp]++;
+  for (let j = k - 1; j >= 0 && j >= k - 6; j--) if (UTTS[j].sp !== u.sp && UTTS[j].e > u.s + 0.3) { interrupts[u.sp]++; break; }
+});
+const totalTalk = talk.reduce((a, b) => a + b, 0) || 1;
+function renderSpeakers() {
+  const box = $('speakers'); box.innerHTML = '';
+  SPK.forEach((s, i) => {
+    const d = document.createElement('div'); d.className = 'spk';
+    d.innerHTML = `<div class="row"><span class="dot" style="background:${s.color}"></span><span class="name" title="${esc(s.device)}">${esc(s.label)}</span>
+      <button data-a="mute" class="${s.muted ? 'on' : ''}" title="Mute">M</button><button data-a="solo" class="${s.solo ? 'on' : ''}" title="Solo">S</button>
+      <button data-a="show" class="${s.shown ? 'on' : ''}" title="Show in transcript">Text</button></div>
+      <input type="range" min="0" max="1" step="0.01" value="${s.vol}" title="Volume">
+      <div class="dim small">${esc(s.kind)} · ${esc(s.file)}</div>` +
+      (D.utts ? `<div class="bar"><i style="width:${(talk[i] / totalTalk * 100).toFixed(1)}%;background:${s.color}"></i></div>
+      <div class="stats"><span>Talk time</span><span>${fmt(talk[i])} (${Math.round(talk[i] / totalTalk * 100)}%)</span>
+      <span>Words</span><span>${words[i]}</span>
+      <span>Pace</span><span>${s.wpm ? s.wpm + ' wpm' : (talk[i] > 0 ? Math.round(words[i] / talk[i] * 60) + ' wpm' : '—')}</span>
+      <span>Turns</span><span>${turns[i]}</span><span>Longest turn</span><span>${fmt(longest[i])}</span>
+      <span>Questions (↗)</span><span>${questions[i]}</span><span>Interruptions</span><span>${interrupts[i]}</span>
+      ${s.f0 ? `<span>Typical pitch</span><span>${s.f0} Hz</span>` : ''}</div>` : '');
+    d.querySelector('input').oninput = e => { s.vol = +e.target.value; applyVolumes(); };
+    d.querySelectorAll('button').forEach(b => b.onclick = () => {
+      const a = b.dataset.a;
+      if (a === 'mute') s.muted = !s.muted;
+      if (a === 'solo') s.solo = !s.solo;
+      if (a === 'show') { s.shown = !s.shown; UTTS.forEach(u => { if (u.sp === i) u.el.classList.toggle('hidden', !s.shown); }); }
+      applyVolumes(); renderSpeakers(); render(now());
+    });
+    box.appendChild(d);
+  });
+}
+renderSpeakers();
+(() => {
+  const cs = $('convstats');
+  if (!D.utts) { cs.innerHTML = '<span class="dim">Available after transcription.</span><span></span>'; return; }
+  const speech = UTTS.reduce((a, u) => a + Math.max(0, u.e - u.s), 0);
+  let overlap = 0;
+  for (let k = 1; k < UTTS.length; k++) for (let j = k - 1; j >= 0 && j >= k - 6; j--) if (UTTS[j].sp !== UTTS[k].sp && UTTS[j].e > UTTS[k].s) { overlap += Math.min(UTTS[j].e, UTTS[k].e) - UTTS[k].s; break; }
+  const gaps = UTTS.filter(u => u.gap).map(u => u.gap);
+  const rows = [['Duration', fmt(DUR)], ['Speech', `${fmt(speech)} (${Math.round(speech / DUR * 100)}%)`], ['Turns', UTTS.length],
+    ['Words', words.reduce((a, b) => a + b, 0)], ['Crosstalk', fmt(overlap)], ['Long silences', gaps.length], ['Longest silence', gaps.length ? fmt(Math.max(...gaps)) : '—']];
+  cs.innerHTML = rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+})();
+
+// ---------- markers & files ----------
+(() => {
+  const ms = D.markers || [];
+  if (!ms.length) { $('markercard').style.display = 'none'; return; }
+  $('markers').innerHTML = '';
+  ms.forEach(m => { const li = document.createElement('li'); li.innerHTML = `<a href="#t=${m.t}">${fmt(m.t)}</a> · ${esc(m.l)}`; li.querySelector('a').onclick = e => { e.preventDefault(); seek(m.t); }; $('markers').appendChild(li); });
+})();
+$('files').innerHTML = SPK.map(s => `<li><a href="${encodeURI(s.file)}">${esc(s.file)}</a> <span class="dim">· ${esc(s.label)}</span></li>`).join('') +
+  (D.files || []).map(f => `<li><a href="${encodeURI(f)}">${esc(f)}</a></li>`).join('') + '<li><a href="../index.html">← All recordings</a></li>';
+$('meta').textContent = [D.format && D.format.toUpperCase(), D.quality, D.rate && `${D.rate / 1000} kHz`, D.app].filter(Boolean).join(' · ');
+
+// ---------- links, keys, start ----------
+$('link').onclick = () => {
+  const url = location.href.split('#')[0] + '#t=' + now().toFixed(1);
+  history.replaceState(null, '', '#t=' + now().toFixed(1));
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => { $('link').textContent = 'Copied'; setTimeout(() => $('link').textContent = 'Link', 1200); }).catch(() => {});
+};
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  const k = e.key;
+  if (k === ' ') { e.preventDefault(); toggle(); }
+  else if (k === 'ArrowLeft') { e.preventDefault(); seek(now() - (e.shiftKey ? 15 : 5)); }
+  else if (k === 'ArrowRight') { e.preventDefault(); seek(now() + (e.shiftKey ? 15 : 5)); }
+  else if (k === '/') { e.preventDefault(); $('q').focus(); }
+  else if (k === 'f' || k === 'F') $('follow').click();
+  else if (k === '+' || k === '=') setZoom(zoom * 2);
+  else if (k === '-') setZoom(zoom / 2);
+  else if (k === '[' || k === ']') { const r = $('rate'); r.selectedIndex = Math.min(r.options.length - 1, Math.max(0, r.selectedIndex + (k === ']' ? 1 : -1))); r.dispatchEvent(new Event('change')); }
+});
+applyVolumes();
+sizeCanvas();
+const h = location.hash.match(/t=([\d.]+)/);
+seek(h ? +h[1] : 0);
+if (h) setTimeout(() => scrollToCurrent(true), 50);
+window.__multirecReady = true;
+</script>
+</body>
+</html>

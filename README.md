@@ -79,6 +79,7 @@ Each recording creates a folder such as `Music\MultiRec\2026-01-31_14-05-09\`:
 |---|---|
 | `Me.flac`, `Others.flac`, … | One file per source (extension follows the format), mono by default |
 | `mix.flac` | *Optional* stereo quick-listen file: **left = microphones, right = system audio** |
+| `viewer.html` | Interactive player: waveforms, markers and, once transcribed, the synced transcript |
 | `session.json` | Start time, devices, sample rate, measured drift, gap statistics, markers |
 | `transcript.*` | Added by the Transcribe tab (see below) |
 
@@ -131,9 +132,26 @@ The **Transcribe** tab turns a recording session into text using [Whisper](https
 
 Because every speaker is on their own track, attribution is exact. No guessing who said what.
 
+### Interactive viewer
+Every session folder gets a **`viewer.html`**. Double-click it, or use **🌐 Viewer** in the app, to open the session in your browser. It's a single offline file, so nothing is uploaded.
+
+- **Play and scrub** the real audio, with one waveform lane per speaker. Click or drag to jump; zoom with `+`/`−` or Ctrl+scroll. Markers are shown on the timeline.
+- **Mix the speakers:** volume, mute and solo per speaker; playback speed from 0.75× to 2×.
+- **Follow along:** the transcript highlights the word being spoken and scrolls with playback. Click any word or timestamp to jump there.
+- **Speaker notes** are shown inline: emphasis, rising/falling intonation, pauses, pace and loudness tags. Low-confidence words are underlined, and hovering a word shows its confidence, pitch and loudness.
+- **Search** words and phrases (all matches are also marked on the timeline), and filter which speakers are shown.
+- **Stats** per speaker (talk time and share, words, pace, turns, longest turn, questions, interruptions, typical pitch) and for the conversation (speech share, crosstalk, silences).
+- **Share a moment:** *Link* copies a `viewer.html#t=754.2` address that opens at that time.
+- **Keys:** `Space` play/pause, `←`/`→` 5 s (`Shift` 15 s), `[`/`]` speed, `F` follow, `/` search.
+
+Sessions that haven't been transcribed yet still get a viewer with waveforms, markers and playback. The recordings folder also gets an **`index.html` library** listing every session (**📚 Library** in Output settings).
+
+Keep `viewer.html` in its session folder: it plays the audio files next to it.
+
 ### Output files
 | File | Contents |
 |---|---|
+| `viewer.html` | Interactive player and transcript (see above) |
 | `transcript.md` | Readable, timestamped conversation with annotations |
 | `transcript.json` | Everything, per word: timing, confidence, pitch, loudness. For further processing. |
 | `transcript.srt`, `transcript.vtt` | Subtitles for the whole conversation |

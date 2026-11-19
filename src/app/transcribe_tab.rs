@@ -253,6 +253,26 @@ impl App {
                 ui.colored_label(RED, e);
             }
             if g.done && g.error.is_none() {
+                if let Some(v) = g
+                    .outputs
+                    .iter()
+                    .find(|o| o.ends_with(crate::transcribe::viewer::VIEWER_FILE))
+                {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("🌐  Open interactive viewer").size(15.0),
+                            )
+                            .min_size(egui::vec2(220.0, 30.0)),
+                        )
+                        .on_hover_text(
+                            "Play, scrub, search and browse the transcript in your browser",
+                        )
+                        .clicked()
+                    {
+                        crate::sysinfo::open_in_explorer(v);
+                    }
+                }
                 ui.horizontal_wrapped(|ui| {
                     ui.colored_label(GREEN, "✔ Transcripts written:");
                     for o in &g.outputs {
