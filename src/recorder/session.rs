@@ -3,7 +3,7 @@
 
 use super::aligner::Aligner;
 use super::manifest::{Manifest, ManifestStream, Marker};
-use super::writer::{create_sink, Sink};
+use super::writer::{create_sink, Sink, SinkSpec};
 use crate::audio::{DeviceKind, Packet, StreamShared};
 use crate::clock::{now_hns, HNS_PER_SEC};
 use crate::config::{AudioFormat, BitDepth};
@@ -45,6 +45,7 @@ pub struct StartSpec {
     pub format: AudioFormat,
     pub depth: BitDepth,
     pub rate: u32,
+    pub opus_kbps: u32,
     pub write_mix: bool,
     pub started_at: String,
 }
@@ -223,6 +224,7 @@ struct Recording {
     rate: u32,
     format: AudioFormat,
     depth: BitDepth,
+    opus_kbps: u32,
     started_at: String,
     t0: i64,
     paused_at: Option<i64>,
@@ -239,16 +241,16 @@ struct Recording {
 impl Recording {
     fn start(spec: StartSpec) -> Result<Self> {
         std::fs::create_dir_all(&spec.dir)?;
+        let sink_spec = SinkSpec {
+            format: spec.format,
+            depth: spec.depth,
+            rate: spec.rate,
+            opus_kbps: spec.opus_kbps,
+        };
         let t0 = now_hns();
         let mut streams = Vec::new();
         for s in spec.streams {
-            let sink = create_sink(
-                &spec.dir.join(&s.file_name),
-                spec.format,
-                spec.depth,
-                spec.rate,
-                s.channels,
-            )?;
+            let sink = create_sink(&spec.dir.join(&s.file_name), &sink_spec, s.channels)?;
             let native = *s.shared.format.lock();
             streams.push(RecStream {
                 aligner: Aligner::new(spec.rate, s.channels as usize, t0),
@@ -262,13 +264,7 @@ impl Recording {
         let (mix, mix_file) = if spec.write_mix && !streams.is_empty() {
             let name = format!("mix.{}", spec.format.ext());
             (
-                Some(create_sink(
-                    &spec.dir.join(&name),
-                    spec.format,
-                    spec.depth,
-                    spec.rate,
-                    2,
-                )?),
+                Some(create_sink(&spec.dir.join(&name), &sink_spec, 2)?),
                 Some(name),
             )
         } else {
@@ -279,6 +275,7 @@ impl Recording {
             rate: spec.rate,
             format: spec.format,
             depth: spec.depth,
+            opus_kbps: spec.opus_kbps,
             started_at: spec.started_at,
             t0,
             paused_at: None,
@@ -470,7 +467,11 @@ impl Recording {
             duration_s,
             sample_rate: self.rate,
             format: self.format.ext().into(),
-            bit_depth: self.depth.label().into(),
+            bit_depth: if self.format == AudioFormat::Opus {
+                format!("Opus {} kbps", self.opus_kbps)
+            } else {
+                self.depth.label().into()
+            },
             aligned: true,
             streams: self
                 .streams
@@ -597,7 +598,7 @@ mod hw_tests {
         for (i, d) in pick.iter().enumerate() {
             let sh = Arc::new(StreamShared::new());
             caps.push(spawn_capture(d, sh.clone(), pkt_tx.clone(), true));
-            specs.push((d.clone(), sh, format!("s{i}.wav")));
+            specs.push((d.clone(), sh, format!("s{i}")));
         }
         std::thread::sleep(Duration::from_millis(700));
         for (d, sh, _) in &specs {
@@ -608,74 +609,94 @@ mod hw_tests {
                 *sh.format.lock()
             );
         }
-        let dir = std::env::temp_dir().join("multirec_hw_test");
-        let _ = std::fs::remove_dir_all(&dir);
-        cmd.send(Cmd::Start(StartSpec {
-            dir: dir.clone(),
-            streams: specs
-                .iter()
-                .map(|(d, sh, f)| StreamSpec {
-                    key: d.key.clone(),
-                    label: d.name.clone(),
-                    device_name: d.name.clone(),
-                    kind: d.kind,
-                    channels: 1,
-                    file_name: f.clone(),
-                    shared: sh.clone(),
-                })
-                .collect(),
-            format: AudioFormat::Wav,
-            depth: BitDepth::S24,
-            rate: 48_000,
-            write_mix: true,
-            started_at: "test".into(),
-        }))
-        .unwrap();
-        std::thread::sleep(Duration::from_millis(1500));
-        cmd.send(Cmd::Marker).unwrap();
-        std::thread::sleep(Duration::from_millis(1500));
-        {
-            let v = shared.view.lock();
-            for s in &v.streams {
+        for format in [AudioFormat::Wav, AudioFormat::Flac, AudioFormat::Opus] {
+            // A fresh session per format; reuse the running captures.
+            let dir = std::env::temp_dir().join(format!("multirec_hw_test_{}", format.ext()));
+            let _ = std::fs::remove_dir_all(&dir);
+            cmd.send(Cmd::Start(StartSpec {
+                dir: dir.clone(),
+                streams: specs
+                    .iter()
+                    .map(|(d, sh, f)| StreamSpec {
+                        key: d.key.clone(),
+                        label: d.name.clone(),
+                        device_name: d.name.clone(),
+                        kind: d.kind,
+                        channels: 1,
+                        file_name: format!("{f}.{}", format.ext()),
+                        shared: sh.clone(),
+                    })
+                    .collect(),
+                format,
+                depth: BitDepth::S16,
+                rate: 48_000,
+                opus_kbps: 32,
+                write_mix: true,
+                started_at: "test".into(),
+            }))
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(1500));
+            cmd.send(Cmd::Marker).unwrap();
+            std::thread::sleep(Duration::from_millis(1500));
+            {
+                let v = shared.view.lock();
+                for s in &v.streams {
+                    println!(
+                        "live: {} frames={} drift={:.1}ppm err={:.2}ms silence={:.3}s dropped={:.3}s",
+                        s.key, s.frames, s.drift_ppm, s.err_ms, s.silence_s, s.dropped_s
+                    );
+                }
+            }
+            cmd.send(Cmd::Stop).unwrap();
+            let mut res = None;
+            for _ in 0..100 {
+                std::thread::sleep(Duration::from_millis(50));
+                if let Some(r) = shared.view.lock().last_result.clone() {
+                    res = Some(r);
+                    break;
+                }
+            }
+            println!("result: {res:?}");
+            assert!(matches!(res, Some(Ok(_))));
+            let m = Manifest::load(&dir).unwrap();
+            println!(
+                "== {format:?}: {} streams, {:.2} s",
+                m.streams.len(),
+                m.duration_s
+            );
+            assert!(m.complete);
+            assert!(
+                (m.duration_s - 3.0).abs() < 0.3,
+                "duration {}",
+                m.duration_s
+            );
+            let mut lens = Vec::new();
+            for s in &m.streams {
+                let a = crate::transcribe::audio_io::read_interleaved(&dir.join(&s.file)).unwrap();
+                let peak = a.samples.iter().fold(0f32, |p, v| p.max(v.abs()));
+                let bytes = std::fs::metadata(dir.join(&s.file))
+                    .map(|m| m.len())
+                    .unwrap_or(0);
                 println!(
-                    "live: {} frames={} drift={:.1}ppm err={:.2}ms silence={:.3}s dropped={:.3}s",
-                    s.key, s.frames, s.drift_ppm, s.err_ms, s.silence_s, s.dropped_s
+                    "{}: {} frames, peak {:.4}, {} bytes",
+                    s.file,
+                    a.samples.len(),
+                    peak,
+                    bytes
                 );
+                lens.push(a.samples.len());
             }
+            let mix = crate::transcribe::audio_io::read_interleaved(
+                &dir.join(format!("mix.{}", format.ext())),
+            )
+            .unwrap();
+            lens.push(mix.samples.len() / 2);
+            assert!(
+                lens.windows(2).all(|w| w[0] == w[1]),
+                "lengths differ: {lens:?}"
+            );
+            assert_eq!(m.markers.len(), 1);
         }
-        cmd.send(Cmd::Stop).unwrap();
-        let mut res = None;
-        for _ in 0..100 {
-            std::thread::sleep(Duration::from_millis(50));
-            if let Some(r) = shared.view.lock().last_result.clone() {
-                res = Some(r);
-                break;
-            }
-        }
-        println!("result: {res:?}");
-        assert!(matches!(res, Some(Ok(_))));
-        let m = Manifest::load(&dir).unwrap();
-        println!("{}", serde_json::to_string_pretty(&m).unwrap());
-        assert!(m.complete);
-        assert!(
-            (m.duration_s - 3.0).abs() < 0.3,
-            "duration {}",
-            m.duration_s
-        );
-        let mut lens = Vec::new();
-        for s in &m.streams {
-            let a = crate::transcribe::audio_io::read_interleaved(&dir.join(&s.file)).unwrap();
-            let peak = a.samples.iter().fold(0f32, |p, v| p.max(v.abs()));
-            println!("{}: {} frames, peak {:.4}", s.file, a.samples.len(), peak);
-            lens.push(a.samples.len());
-        }
-        let mix = crate::transcribe::audio_io::read_interleaved(&dir.join("mix.wav")).unwrap();
-        lens.push(mix.samples.len() / 2);
-        assert!(
-            lens.windows(2).all(|w| w[0] == w[1]),
-            "lengths differ: {lens:?}"
-        );
-        assert_eq!(m.markers.len(), 1);
         drop(caps);
         cmd.send(Cmd::Shutdown).unwrap();
         th.join().unwrap();

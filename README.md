@@ -5,6 +5,7 @@
 MultiRec is a small Windows app. A typical use is a call: your voice goes to one file, everyone else (whatever plays through your speakers or headset) goes to another. The files start at the same instant and stay in sync to within a fraction of a millisecond, so you can drop them into any audio editor and they line up.
 
 - One portable `.exe`. No installer, no runtime dependencies.
+- Lossless FLAC by default, or compact Opus at ~14 MB per hour per track.
 - Records any number of microphones and output devices at once.
 - Live meters, waveforms, file sizes, disk-space estimate and sync statistics.
 - Optional transcription that runs entirely on your PC, labels each speaker, and keeps the *how* as well as the *what*: pauses, emphasis, rising intonation, pace.
@@ -55,37 +56,54 @@ Each selected source has:
 
 Markers and pauses are saved with the session and appear in transcripts.
 
+### Choosing a quality
+The **Quality** row above the sources switches between three presets:
+
+| Preset | Format | Per mono track per hour | Best for |
+|---|---|---|---|
+| **Lossless** (default) | FLAC, 16-bit, 48 kHz | ~100–200 MB (silence costs almost nothing) | Archiving, editing, anything you might process later |
+| **Compact speech** | Opus 32 kbps | ~14 MB | Long calls, meetings, keeping years of recordings |
+| **Studio** | WAV, 24-bit, 48 kHz | 518 MB | Maximum headroom and compatibility with every tool |
+
+Why these are safe for speech:
+- **16-bit** gives 96 dB of dynamic range, far more than a voice needs. MultiRec adds proper dither, so quiet passages stay clean.
+- **FLAC** is lossless: it decodes to exactly the same samples, just smaller.
+- **Opus** is the codec built for voice calls. At 32 kbps speech is near-transparent, and in our tests Whisper produced word-for-word identical transcripts from Opus and WAV.
+
+"Custom" appears when you change individual settings.
+
 ### What you get
 Each recording creates a folder such as `Music\MultiRec\2026-01-31_14-05-09\`:
 
 | File | Contents |
 |---|---|
-| `Me.wav`, `Others.wav`, … | One file per source, mono by default |
-| `mix.wav` | Stereo quick-listen file: **left = microphones, right = system audio** |
+| `Me.flac`, `Others.flac`, … | One file per source (extension follows the format), mono by default |
+| `mix.flac` | *Optional* stereo quick-listen file: **left = microphones, right = system audio** |
 | `session.json` | Start time, devices, sample rate, measured drift, gap statistics, markers |
 | `transcript.*` | Added by the Transcribe tab (see below) |
 
-**All files have exactly the same length and start at the same instant.** To edit, import them together at position 0.
+**All files have exactly the same length and start at the same instant**, in every format. To edit, import them together at position 0.
 
 ### Settings (Record tab → *Output settings*)
 | Setting | Default | Notes |
 |---|---|---|
 | Output folder | `Music\MultiRec` | |
 | Session folder name | `{date}_{time}` | |
-| Format | WAV | FLAC is lossless and roughly half the size |
-| Bit depth | 24-bit | 16-bit, 24-bit or 32-bit float (WAV only) |
-| Sample rate | 48 kHz | Devices at other rates are converted |
-| Stereo mix | on | Writes `mix.wav` |
+| Format | FLAC | FLAC (lossless), Opus (compact) or WAV (uncompressed) |
+| Opus bitrate | 32 kbps | 24 / 32 / 48 / 64 kbps per channel; Opus only |
+| Bit depth | 16-bit | 16-bit, 24-bit or 32-bit float (WAV only); not used for Opus |
+| Sample rate | 48 kHz | Devices at other rates are converted. Opus always uses 48 kHz. |
+| Stereo mix | off | Writes `mix.*`. It's redundant (any editor can rebuild it) and doubles the size of a two-track session. |
 | System audio in stereo | off | Mono halves the file size; voices don't need stereo |
 | Keep output devices awake | on | Plays inaudible silence so Windows keeps delivering audio during quiet moments. Sync is maintained either way. |
 | Global hotkeys | on | Takes effect after restart |
 
-Settings are saved automatically to `%APPDATA%\MultiRec\config.toml`.
+Settings are saved automatically to `%APPDATA%\MultiRec\config.toml`. Existing installs keep their previous settings; pick a preset to switch.
 
 ### Reliability
 - **Crash-safe:** files are made readable every 5 seconds. If the app or PC dies, everything up to that point plays fine.
 - **Unplugged device:** that track continues with silence, a warning appears, and MultiRec reconnects automatically when the device returns. The other tracks are unaffected.
-- **File size:** a WAV file can be at most 4 GB, which is about 15 hours of 24-bit 48 kHz mono. Use FLAC for longer recordings.
+- **File size limit:** a WAV file can be at most 4 GB, which is about 15 hours of 24-bit 48 kHz mono. FLAC and Opus have no such limit.
 
 ## Transcription
 

@@ -442,7 +442,7 @@ mod e2e {
         let total = at(t_o2) + o2.len() + sr;
         let mut me = vec![0f32; total];
         let mut others = vec![0f32; total];
-        let mut place = |dst: &mut Vec<f32>, clip: &[f32], t: f64, g: f32| {
+        let place = |dst: &mut Vec<f32>, clip: &[f32], t: f64, g: f32| {
             for (i, &v) in clip.iter().enumerate() {
                 dst[at(t) + i] += v * g;
             }
@@ -457,15 +457,23 @@ mod e2e {
         let dir = std::env::temp_dir().join("multirec_tr_test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        for (name, data) in [("Me.wav", &me), ("Others.wav", &others)] {
-            let mut s = crate::recorder::writer::create_sink(
-                &dir.join(name),
-                crate::config::AudioFormat::Wav,
-                crate::config::BitDepth::S16,
-                sr as u32,
-                1,
-            )
-            .unwrap();
+        // MULTIREC_TEST_FORMAT=opus|flac|wav (default wav) selects the track format.
+        let fmt = match std::env::var("MULTIREC_TEST_FORMAT").as_deref() {
+            Ok("opus") => crate::config::AudioFormat::Opus,
+            Ok("flac") => crate::config::AudioFormat::Flac,
+            _ => crate::config::AudioFormat::Wav,
+        };
+        let ext = fmt.ext();
+        let spec = crate::recorder::writer::SinkSpec {
+            format: fmt,
+            depth: crate::config::BitDepth::S16,
+            rate: sr as u32,
+            opus_kbps: 32,
+        };
+        for (name, data) in [("Me", &me), ("Others", &others)] {
+            let mut s =
+                crate::recorder::writer::create_sink(&dir.join(format!("{name}.{ext}")), &spec, 1)
+                    .unwrap();
             s.write(data).unwrap();
             s.finalize().unwrap();
         }
@@ -473,7 +481,7 @@ mod e2e {
             label: label.into(),
             device_name: "test".into(),
             kind,
-            file: format!("{label}.wav"),
+            file: format!("{label}.{ext}"),
             channels: 1,
             native_rate: 48_000,
             native_channels: 1,

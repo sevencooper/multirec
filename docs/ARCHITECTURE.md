@@ -58,20 +58,27 @@ The **resampler** (`src/dsp/resampler.rs`) is a 32-tap Blackman-Harris windowed 
 **Pause:** packets are ignored. On resume, `t0` shifts forward by the paused duration for every aligner, so the timeline stays continuous. Pause and resume are recorded as markers.
 
 ## Files
-- **Sinks** (`src/recorder/writer.rs`): a `Sink` trait with WAV (`hound`) and FLAC implementations. WAV headers are rewritten on `flush()` every 5 s, so a killed process leaves a valid file.
+- **Sinks** (`src/recorder/writer.rs`): a `Sink` trait with WAV (`hound`), FLAC and Opus implementations, created from a `SinkSpec` (format, bit depth, rate, Opus bitrate). WAV headers are rewritten on `flush()` every 5 s, so a killed process leaves a valid file.
 - **FLAC** (`src/recorder/flac.rs`): our own streaming encoder, about 300 lines:
   - fixed predictors of order 0–4, chosen per subframe;
   - partitioned Rice coding (partition order ≤ 6), with a verbatim fallback;
   - CRC-8/16, 4096-sample blocks.
 
   Frames are written as soon as they fill. STREAMINFO is patched with the total sample count on finish; 0 ("unknown") stays valid if that never happens. Pure Rust crates offered no streaming encoder that was crash-safe and light enough, so we wrote this one. Tests decode its output with `claxon` and compare bit-exactly.
-- **Mix:** left = sum of input streams, right = sum of loopback streams, clamped. If only one kind exists, both channels carry it.
+- **Opus** (`src/recorder/opus.rs`): libopus (bundled, static) in VoIP mode with voice signal hint and DTX, in 20 ms frames, written to an Ogg Opus file with the pure-Rust `ogg` crate. Pages close about once a second for crash safety. The timing contract keeps Opus tracks the same length as every other format:
+  - `pre_skip` in OpusHead equals the encoder lookahead, so decoders drop the startup delay;
+  - the last packet is held back so the end-of-stream page can carry granule `pre_skip + frames_written`, so decoders trim the final frame's padding;
+  - with DTX enabled the encoder still emits one (tiny) packet per frame, so granule positions stay exact.
+
+  Opus only runs at 48 kHz, which `Config::effective_rate()` enforces. The transcriber decodes `.opus` with the same rules (`opus::decode`).
+- **Quantization:** 16-bit output (WAV and FLAC) gets TPDF dither of ±1 LSB, except for exact zeros, so digital silence stays silent and FLAC still compresses it to almost nothing.
+- **Mix:** optional (off by default); left = sum of input streams, right = sum of loopback streams, clamped. If only one kind exists, both channels carry it.
 - **Manifest** (`src/recorder/manifest.rs`, `session.json`): written at start (`complete: false`), refreshed every 30 s, and finalized on stop. Fields:
   ```jsonc
   {
     "app": "MultiRec 0.1.0", "version": 1,
     "started_at": "RFC 3339 local time of sample 0",
-    "duration_s": 3.02, "sample_rate": 48000, "format": "wav", "bit_depth": "24-bit",
+    "duration_s": 3.02, "sample_rate": 48000, "format": "flac|opus|wav", "bit_depth": "16-bit | Opus 32 kbps",
     "aligned": true,
     "streams": [{ "label": "Me", "device_name": "...", "kind": "input|loopback", "file": "Me.wav",
                   "channels": 1, "native_rate": 48000, "native_channels": 2,
@@ -120,10 +127,10 @@ Runs on a worker thread. Progress goes through `Arc<Mutex<JobProgress>>`, and ca
 | `src/dsp/resampler.rs` | Windowed-sinc resampler with drift correction |
 | `src/recorder/aligner.rs` | Timeline alignment (the core of sync) |
 | `src/recorder/session.rs` | Session thread, recording lifecycle, hardware test |
-| `src/recorder/writer.rs`, `flac.rs` | File sinks, FLAC encoder |
+| `src/recorder/writer.rs`, `flac.rs`, `opus.rs` | File sinks, FLAC encoder, Ogg Opus writer/reader |
 | `src/recorder/manifest.rs` | `session.json` |
 | `src/transcribe/*` | Transcription pipeline (above) |
-| `src/config.rs` | Persistent settings (`%APPDATA%\MultiRec\config.toml`) |
+| `src/config.rs` | Persistent settings (`%APPDATA%\MultiRec\config.toml`), quality presets |
 | `src/clock.rs`, `src/sysinfo.rs` | QPC clock; free disk space, opening Explorer |
 
 ## Known limitations / ideas

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub enum AudioFormat {
     Wav,
     Flac,
+    Opus,
 }
 
 impl AudioFormat {
@@ -13,12 +14,14 @@ impl AudioFormat {
         match self {
             AudioFormat::Wav => "wav",
             AudioFormat::Flac => "flac",
+            AudioFormat::Opus => "opus",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
-            AudioFormat::Wav => "WAV",
-            AudioFormat::Flac => "FLAC (lossless, ~50% size)",
+            AudioFormat::Wav => "WAV (uncompressed)",
+            AudioFormat::Flac => "FLAC (lossless)",
+            AudioFormat::Opus => "Opus (compact, speech-tuned)",
         }
     }
 }
@@ -46,6 +49,75 @@ impl BitDepth {
             BitDepth::S16 => "16-bit",
             BitDepth::S24 => "24-bit",
             BitDepth::F32 => "32-bit float",
+        }
+    }
+}
+
+/// One-click combinations of format settings. Presets never touch the mix or
+/// stereo options, only format, bit depth, sample rate and Opus bitrate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    Compact,
+    Lossless,
+    Studio,
+    Custom,
+}
+
+impl Preset {
+    pub const ALL: [Preset; 3] = [Preset::Lossless, Preset::Compact, Preset::Studio];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Preset::Compact => "Compact speech",
+            Preset::Lossless => "Lossless",
+            Preset::Studio => "Studio",
+            Preset::Custom => "Custom",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Preset::Compact => "Opus 32 kbps · ~14 MB/h per track · near-transparent for speech",
+            Preset::Lossless => "FLAC 16-bit 48 kHz · ~100–200 MB/h per track · bit-perfect",
+            Preset::Studio => {
+                "WAV 24-bit 48 kHz · 518 MB/h per track · max headroom & compatibility"
+            }
+            Preset::Custom => "Your own combination",
+        }
+    }
+
+    pub fn apply(self, c: &mut Config) {
+        match self {
+            Preset::Compact => {
+                c.format = AudioFormat::Opus;
+                c.opus_kbps = 32;
+                c.sample_rate = 48_000;
+            }
+            Preset::Lossless => {
+                c.format = AudioFormat::Flac;
+                c.bit_depth = BitDepth::S16;
+                c.sample_rate = 48_000;
+            }
+            Preset::Studio => {
+                c.format = AudioFormat::Wav;
+                c.bit_depth = BitDepth::S24;
+                c.sample_rate = 48_000;
+            }
+            Preset::Custom => {}
+        }
+    }
+
+    pub fn detect(c: &Config) -> Preset {
+        match (
+            c.format,
+            c.effective_depth(),
+            c.effective_rate(),
+            c.opus_kbps,
+        ) {
+            (AudioFormat::Opus, _, _, 32) => Preset::Compact,
+            (AudioFormat::Flac, BitDepth::S16, 48_000, _) => Preset::Lossless,
+            (AudioFormat::Wav, BitDepth::S24, 48_000, _) => Preset::Studio,
+            _ => Preset::Custom,
         }
     }
 }
@@ -84,6 +156,8 @@ pub struct Config {
     pub format: AudioFormat,
     pub bit_depth: BitDepth,
     pub sample_rate: u32,
+    /// Opus bitrate per channel (kbps).
+    pub opus_kbps: u32,
     pub write_mix: bool,
     pub keep_loopback_stereo: bool,
     /// Play an inaudible stream on loopback devices so they deliver data during silence.
@@ -106,10 +180,11 @@ impl Default for Config {
             initialized: false,
             output_dir: base.join("MultiRec"),
             folder_template: "{date}_{time}".into(),
-            format: AudioFormat::Wav,
-            bit_depth: BitDepth::S24,
+            format: AudioFormat::Flac,
+            bit_depth: BitDepth::S16,
             sample_rate: 48_000,
-            write_mix: true,
+            opus_kbps: 32,
+            write_mix: false,
             keep_loopback_stereo: false,
             keep_alive: true,
             hotkeys_enabled: true,
@@ -148,12 +223,55 @@ impl Config {
         Ok(())
     }
 
-    /// FLAC can't store floats; fall back to 24-bit.
+    /// FLAC can't store floats; fall back to 24-bit. (Unused for Opus.)
     pub fn effective_depth(&self) -> BitDepth {
         if self.format == AudioFormat::Flac && self.bit_depth == BitDepth::F32 {
             BitDepth::S24
         } else {
             self.bit_depth
         }
+    }
+
+    /// Opus always records at 48 kHz.
+    pub fn effective_rate(&self) -> u32 {
+        if self.format == AudioFormat::Opus {
+            48_000
+        } else {
+            self.sample_rate
+        }
+    }
+
+    /// Approximate bytes per second for one channel of audio in the current format.
+    pub fn bytes_per_sec_per_channel(&self) -> f64 {
+        match self.format {
+            AudioFormat::Opus => self.opus_kbps as f64 * 1000.0 / 8.0,
+            AudioFormat::Wav => {
+                self.effective_rate() as f64 * self.effective_depth().bytes() as f64
+            }
+            // Typical for speech; silence compresses to almost nothing.
+            AudioFormat::Flac => {
+                self.effective_rate() as f64 * self.effective_depth().bytes() as f64 * 0.55
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn presets_round_trip() {
+        for p in Preset::ALL {
+            let mut c = Config::default();
+            c.sample_rate = 44_100;
+            c.bit_depth = BitDepth::F32;
+            p.apply(&mut c);
+            assert_eq!(Preset::detect(&c), p);
+        }
+        assert_eq!(Preset::detect(&Config::default()), Preset::Lossless);
+        let mut c = Config::default();
+        c.sample_rate = 16_000;
+        assert_eq!(Preset::detect(&c), Preset::Custom);
     }
 }

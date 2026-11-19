@@ -48,6 +48,12 @@ fn for_each_sample(path: &Path, mut f: impl FnMut(f32)) -> Result<(u32, usize)> 
             }
             Ok((info.sample_rate, info.channels as usize))
         }
+        "opus" | "ogg" => {
+            let file =
+                std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+            let ch = crate::recorder::opus::decode(std::io::BufReader::new(file), f)?;
+            Ok((crate::recorder::opus::RATE, ch))
+        }
         _ => bail!("unsupported audio file: {}", path.display()),
     }
 }
@@ -100,6 +106,12 @@ fn probe(path: &Path) -> Result<(u32, usize)> {
         let r = claxon::FlacReader::open(path)?;
         let i = r.streaminfo();
         Ok((i.sample_rate, i.channels as usize))
+    } else if ext == "opus" || ext == "ogg" {
+        let f = std::io::BufReader::new(std::fs::File::open(path)?);
+        Ok((
+            crate::recorder::opus::RATE,
+            crate::recorder::opus::probe(f)?,
+        ))
     } else {
         let r = hound::WavReader::open(path)?;
         let s = r.spec();

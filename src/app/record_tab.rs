@@ -1,7 +1,7 @@
 use super::widgets::{self, fmt_bytes, fmt_dur, fmt_hm, section_title, AMBER, DIM, GREEN, RED};
 use super::{App, Tab};
 use crate::audio::{CaptureStatus, DeviceKind};
-use crate::config::{AudioFormat, BitDepth};
+use crate::config::{AudioFormat, BitDepth, Preset};
 use crate::recorder::session::{Cmd, Phase, StartSpec, StreamSpec};
 use eframe::egui::{self, Button, Color32, RichText, Ui};
 use std::path::PathBuf;
@@ -103,7 +103,8 @@ impl App {
             streams,
             format: self.cfg.format,
             depth: self.cfg.effective_depth(),
-            rate: self.cfg.sample_rate,
+            rate: self.cfg.effective_rate(),
+            opus_kbps: self.cfg.opus_kbps,
             write_mix: self.cfg.write_mix,
             started_at: now.to_rfc3339(),
         }));
@@ -175,6 +176,7 @@ impl App {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 self.totals_ui(ui);
+                self.preset_ui(ui, idle);
                 ui.add_space(6.0);
                 selection_changed |= self.sources_ui(ui, idle, DeviceKind::Input);
                 ui.add_space(6.0);
@@ -193,8 +195,6 @@ impl App {
     }
 
     fn totals_ui(&mut self, ui: &mut Ui) {
-        let rate = self.cfg.sample_rate as f64;
-        let bytes = self.cfg.effective_depth().bytes() as f64;
         let mut chans = 0u32;
         let mut n_streams = 0;
         for d in &self.devices {
@@ -206,16 +206,14 @@ impl App {
         if self.cfg.write_mix && n_streams > 0 {
             chans += 2;
         }
-        let wav_bps = rate * bytes * chans as f64;
-        let bps = if self.cfg.format == AudioFormat::Flac {
-            if !self.idle() && self.view.elapsed_s > 5.0 {
+        let estimate = self.cfg.bytes_per_sec_per_channel() * chans as f64;
+        // FLAC size depends on content: switch to the measured rate once recording.
+        let bps =
+            if self.cfg.format == AudioFormat::Flac && !self.idle() && self.view.elapsed_s > 5.0 {
                 self.view.total_bytes as f64 / self.view.elapsed_s
             } else {
-                wav_bps * 0.55
-            }
-        } else {
-            wav_bps
-        };
+                estimate
+            };
         if self
             .disk_checked
             .is_none_or(|t| t.elapsed() > Duration::from_secs(3))
@@ -254,11 +252,16 @@ impl App {
                     stat(ui, "Recording time left", left);
                     ui.end_row();
                 });
+            let quality = if self.cfg.format == AudioFormat::Opus {
+                format!("{} kbps", self.cfg.opus_kbps)
+            } else {
+                self.cfg.effective_depth().label().to_string()
+            };
             let mut info = format!(
                 "{} streams · {} Hz · {} {}{}",
                 n_streams,
-                self.cfg.sample_rate,
-                self.cfg.effective_depth().label(),
+                self.cfg.effective_rate(),
+                quality,
                 self.cfg.format.ext().to_uppercase(),
                 if self.cfg.write_mix {
                     " · + stereo mix (L = mics, R = system)"
@@ -267,10 +270,33 @@ impl App {
                 }
             );
             if self.cfg.format == AudioFormat::Wav {
-                let per_file_hours = 4.0e9 / (rate * bytes * 2.0) / 3600.0;
+                let per_file_hours = 4.0e9 / (self.cfg.bytes_per_sec_per_channel() * 2.0) / 3600.0;
                 info.push_str(&format!(" · WAV limit ≈ {:.0} h per file", per_file_hours));
             }
             ui.label(RichText::new(info).small().color(DIM));
+        });
+    }
+
+    /// One-click quality presets, always visible above the sources.
+    fn preset_ui(&mut self, ui: &mut Ui, idle: bool) {
+        let current = Preset::detect(&self.cfg);
+        ui.add_enabled_ui(idle, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Quality").strong());
+                for p in Preset::ALL {
+                    let resp = ui
+                        .selectable_label(current == p, p.label())
+                        .on_hover_text(p.description());
+                    if resp.clicked() {
+                        p.apply(&mut self.cfg);
+                    }
+                }
+                if current == Preset::Custom {
+                    ui.selectable_label(true, "Custom")
+                        .on_hover_text("Adjusted in Output settings");
+                }
+                ui.label(RichText::new(current.description()).small().color(DIM));
+            });
         });
     }
 
@@ -418,7 +444,7 @@ impl App {
                             "{} Hz {}ch → {} Hz {}ch",
                             r,
                             c,
-                            self.cfg.sample_rate,
+                            self.cfg.effective_rate(),
                             self.stream_channels(kind)
                         ),
                         DIM,
@@ -519,14 +545,42 @@ impl App {
                 egui::ComboBox::from_id_salt("fmt")
                     .selected_text(self.cfg.format.label())
                     .show_ui(ui, |ui| {
-                        for f in [AudioFormat::Wav, AudioFormat::Flac] {
+                        for f in [AudioFormat::Flac, AudioFormat::Opus, AudioFormat::Wav] {
                             ui.selectable_value(&mut self.cfg.format, f, f.label());
                         }
                     });
                 ui.end_row();
 
+                if self.cfg.format == AudioFormat::Opus {
+                    ui.label("Opus bitrate");
+                    ui.horizontal(|ui| {
+                        egui::ComboBox::from_id_salt("kbps")
+                            .selected_text(format!("{} kbps", self.cfg.opus_kbps))
+                            .show_ui(ui, |ui| {
+                                for (k, note) in [
+                                    (24, "very good speech"),
+                                    (32, "near-transparent speech (recommended)"),
+                                    (48, "transparent speech, good music"),
+                                    (64, "transparent music"),
+                                ] {
+                                    ui.selectable_value(&mut self.cfg.opus_kbps, k, format!("{k} kbps — {note}"));
+                                }
+                            });
+                        ui.label(
+                            RichText::new(format!(
+                                "≈ {} per hour per mono track",
+                                fmt_bytes((self.cfg.opus_kbps as f64 * 1000.0 / 8.0 * 3600.0) as u64)
+                            ))
+                            .small()
+                            .color(DIM),
+                        );
+                    });
+                    ui.end_row();
+                }
+
+                let pcm = self.cfg.format != AudioFormat::Opus;
                 ui.label("Bit depth");
-                egui::ComboBox::from_id_salt("depth")
+                ui.add_enabled_ui(pcm, |ui| egui::ComboBox::from_id_salt("depth")
                     .selected_text(self.cfg.effective_depth().label())
                     .show_ui(ui, |ui| {
                         for d in [BitDepth::S16, BitDepth::S24, BitDepth::F32] {
@@ -535,22 +589,27 @@ impl App {
                                 ui.selectable_value(&mut self.cfg.bit_depth, d, d.label());
                             });
                         }
-                    });
+                    }));
                 ui.end_row();
 
                 ui.label("Sample rate");
-                egui::ComboBox::from_id_salt("rate")
-                    .selected_text(format!("{} Hz", self.cfg.sample_rate))
+                ui.add_enabled_ui(pcm, |ui| egui::ComboBox::from_id_salt("rate")
+                    .selected_text(format!("{} Hz", self.cfg.effective_rate()))
                     .show_ui(ui, |ui| {
-                        for r in [16_000u32, 44_100, 48_000, 96_000] {
+                        for r in [16_000u32, 24_000, 32_000, 44_100, 48_000, 96_000] {
                             ui.selectable_value(&mut self.cfg.sample_rate, r, format!("{r} Hz"));
                         }
-                    });
+                    }));
                 ui.end_row();
 
                 ui.label("Files");
                 ui.vertical(|ui| {
-                    ui.checkbox(&mut self.cfg.write_mix, "Also write a stereo mix (left = microphones, right = system audio)");
+                    let mix_cost = fmt_bytes((self.cfg.bytes_per_sec_per_channel() * 2.0 * 3600.0) as u64);
+                    ui.checkbox(
+                        &mut self.cfg.write_mix,
+                        format!("Also write a stereo mix (left = microphones, right = system audio) — +{mix_cost}/h"),
+                    )
+                    .on_hover_text("Redundant: any editor can rebuild it from the separate tracks. Handy for quick listening.");
                     ui.checkbox(&mut self.cfg.keep_loopback_stereo, "Keep system audio in stereo (otherwise mono)");
                 });
                 ui.end_row();

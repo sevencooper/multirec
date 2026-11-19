@@ -28,7 +28,8 @@ You can't see the GUI. For UI changes, make sure it compiles, then ask the human
 4. **Files stay readable after a crash**: periodic `Sink::flush()` (WAV header rewrite) and a frame-by-frame FLAC encoder. Don't replace these with whole-file-at-end writers.
 5. **One portable exe**: static CRT (`.cargo/config.toml`), and no runtime DLLs beyond Windows system DLLs. Check with `objdump -p multirec.exe | grep "DLL Name"`.
 6. **Everything local**: the only network call is the model download in `transcribe/models.rs`. No telemetry.
-7. **`session.json` is a contract** between recorder and transcriber (and users' scripts). Add fields with `#[serde(default)]`; bump `version` on breaking changes.
+7. **Opus files keep exact length**: `pre_skip` = encoder lookahead, and the final granule = `pre_skip + frames_written` (see `recorder/opus.rs`). Never drop packets during silence (DTX packets still get written), or timing breaks.
+8. **`session.json` is a contract** between recorder and transcriber (and users' scripts). Add fields with `#[serde(default)]`; bump `version` on breaking changes.
 
 ## Gotchas already learned
 - `whisper-rs` **0.16** API: `state.as_iter()`, `seg.start_timestamp()` (10 ms units), `seg.get_token(j)`, `tok.token_data().t_dtw`. Older versions (0.13) failed bindgen with current LLVM. Ignore examples written for older APIs.
@@ -37,6 +38,8 @@ You can't see the GUI. For UI changes, make sure it compiles, then ask the human
 - The `windows` crate is pinned to 0.58. WASAPI structs (`WAVEFORMATEX`, `WAVEFORMATEXTENSIBLE`) are `packed`, so use `ptr::read_unaligned`. Packet timestamps (`u64QPCPosition`) are in 100 ns units, matching `clock::now_hns()`.
 - `eframe` is pinned (`=0.29.1`). Its API changes between versions (for example `ComboBox::from_id_salt`, `DragValue::range`).
 - Loopback capture delivers **no packets during silence** unless something plays. The keep-alive silent render stream and the session's idle padding both exist for this reason.
+- Don't judge Opus quality by waveform SNR: VoIP mode is perceptual, so measure loudness envelope or transcription accuracy instead (see `opus::tests`).
+- Dither never touches exact zeros, so FLAC still compresses digital silence. Keep it that way.
 - Devices are keyed `in:<endpoint-id>` / `lb:<endpoint-id>` in config and packets. Device names aren't unique.
 
 ## Conventions

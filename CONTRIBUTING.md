@@ -15,12 +15,12 @@ winget install --id Kitware.CMake
 winget install --id LLVM.LLVM
 setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
 ```
-Open a new terminal, then run `rustup default stable-msvc`. CMake and LLVM are only needed to compile whisper.cpp (the default `whisper` feature).
+Open a new terminal, then run `rustup default stable-msvc`. CMake builds the bundled libopus (always) and whisper.cpp (default `whisper` feature); LLVM provides libclang for whisper-rs bindings.
 
 ### WSL / Linux (optional, for fast unit tests)
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-sudo apt install -y build-essential pkg-config libgtk-3-dev libxdo-dev
+sudo apt install -y build-essential cmake pkg-config libgtk-3-dev libxdo-dev
 ```
 
 ## Workflows
@@ -54,7 +54,7 @@ cargo test --no-default-features # unit tests on Linux, without whisper.cpp (~1 
 | Level | Command | What it proves |
 |---|---|---|
 | Unit | `cargo test` | Resampler accuracy and anti-aliasing; aligner sync under ±500 ppm drift, gaps, late or early start, 44.1→48 kHz; FLAC bit-exact round trips (decoded with `claxon`); WAV/FLAC sinks; YIN pitch; VAD; bleed removal; merge order; export formatting |
-| Hardware | `./build-windows.sh hwtest` | Records 3 s from the **default mic + default speakers** through the real capture → session → file pipeline. Asserts that all files have equal length, the duration is right, the manifest is complete, and markers are saved. |
+| Hardware | `./build-windows.sh hwtest` | Records 3 s in **each format (WAV, FLAC, Opus)** from the **default mic + default speakers** through the real capture → session → file pipeline. Asserts that all files have equal length, the duration is right, the manifest is complete, and markers are saved. |
 | Transcription E2E | see below | Full pipeline on a synthetic two-speaker conversation, including speaker bleed: correct attribution, bleed removed, markers and pauses rendered |
 | Manual | run the app | Anything UI-related. Use the checklist below. |
 
@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts\gen-test-speech.ps1 -OutDir C:\
 ```bash
 ./build-windows.sh e2e 'C:\temp\multirec-tts'
 ```
-Set `MULTIREC_TEST_MODEL` to try another model.
+Set `MULTIREC_TEST_MODEL` to try another model, and `MULTIREC_TEST_FORMAT=opus|flac|wav` to store the test tracks in that format.
 
 **Manual checklist for UI or capture changes:**
 - [ ] Meters react on every selected source; clip light fires above about −0.1 dBFS.
