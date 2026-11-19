@@ -25,8 +25,14 @@ jobs:
       - uses: jakoch/install-vulkan-sdk-action@v1.8.0
         with:
           cache: true
+      - name: Cache key from runner image
+        # CMake caches absolute compiler paths (e.g. the MSVC version). When GitHub
+        # updates the runner image those paths disappear, so tie the cache to the image.
+        shell: pwsh
+        run: '"IMAGE_VERSION=$env:ImageOS-$env:ImageVersion" | Out-File -FilePath $env:GITHUB_ENV -Append'
       - uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ env.IMAGE_VERSION }}
           # Bump when C/C++ build flags change: whisper-rs-sys doesn't rebuild on env changes.
           prefix-key: v3-portable-ggml-vulkan
       - name: Short build path
