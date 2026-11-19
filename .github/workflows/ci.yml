@@ -19,20 +19,20 @@ jobs:
       # whisper-rs uses bindgen, which needs libclang (LLVM is preinstalled on the runner).
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --release
       - name: Build
         run: cargo build --release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: multirec-windows-x64
           path: target/release/multirec.exe
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: target/release/multirec.exe
           generate_release_notes: true
