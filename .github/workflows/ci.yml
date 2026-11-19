@@ -29,6 +29,15 @@ jobs:
         with:
           # Bump when C/C++ build flags change: whisper-rs-sys doesn't rebuild on env changes.
           prefix-key: v3-portable-ggml-vulkan
+      - name: Short build path
+        # whisper.cpp's Vulkan shader-generator build nests deep enough to exceed
+        # MSBuild's 260-character path limit under D:\a\<repo>\<repo>\target. Build
+        # through a short junction to the same folder (the cache still sees ./target).
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path target | Out-Null
+          New-Item -ItemType Junction -Path C:\t -Target "$env:GITHUB_WORKSPACE\target" | Out-Null
+          "CARGO_TARGET_DIR=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Test
         run: cargo test --release
       - name: Build

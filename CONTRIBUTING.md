@@ -98,6 +98,7 @@ Set `MULTIREC_TEST_MODEL` to try another model, `MULTIREC_TEST_FORMAT=opus|flac|
 - **`whisper-rs` must be 0.16 or newer.** 0.13's bindgen produced opaque structs with recent LLVM. 0.16 uses a segment-object API (`state.as_iter()`, `seg.get_token(j)`); don't copy older examples.
 - **Word timestamps:** use DTW (`DtwParameters` with a model preset, mapped in `engine_whisper.rs::dtw_preset`). whisper.cpp's default heuristic timestamps were seconds off in testing. A new model needs an entry in that mapping.
 - **CMake 4.x** builds whisper.cpp fine with whisper-rs 0.16. If an older dependency fails with a `cmake_minimum_required` error, set `CMAKE_POLICY_VERSION_MINIMUM=3.5`.
+- **Keep the build path short on Windows.** whisper.cpp's Vulkan build nests deep enough to hit MSBuild's 260-character limit (`error FTK1011` / `MSB8066`). `C:\dev\multirec` is fine; CI builds through a `C:\t` junction.
 - **The `windows` crate** is pinned to 0.58. WASAPI struct layouts are `packed`: read them with `ptr::read_unaligned`, never by reference.
 
 ## Releasing
