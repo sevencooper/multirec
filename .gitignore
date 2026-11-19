@@ -1,0 +1,12 @@
+/target
+# Never commit recordings or downloaded models
+*.wav
+*.flac
+*.bin
+*.part
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
